@@ -211,7 +211,7 @@ export const db = {
   },
   
   async getUserApiKeys(userId: string): Promise<ApiKey[]> {
-    const keyIds = await store.smembers<string[]>(KEYS.userApiKeys(userId))
+    const keyIds = await (store.smembers as <T>(key: string) => Promise<T>)<string[]>(KEYS.userApiKeys(userId))
     const keys = await Promise.all(keyIds.map((id: string) => this.getApiKey(id)))
     return keys.filter((k): k is ApiKey => k !== null && !k.revoked)
   },
@@ -226,7 +226,7 @@ export const db = {
   },
   
   async getUserProjects(userId: string): Promise<Project[]> {
-    const projectIds = await store.smembers<string[]>(KEYS.userProjects(userId))
+    const projectIds = await (store.smembers as <T>(key: string) => Promise<T>)<string[]>(KEYS.userProjects(userId))
     const projects = await Promise.all(projectIds.map((id: string) => this.getProject(id)))
     return projects.filter((p): p is Project => p !== null)
   },
@@ -247,7 +247,7 @@ export const db = {
   },
   
   async getProjectTasks(projectId: string): Promise<Task[]> {
-    const taskIds = await store.smembers<string[]>(KEYS.projectTasks(projectId))
+    const taskIds = await (store.smembers as <T>(key: string) => Promise<T>)<string[]>(KEYS.projectTasks(projectId))
     const tasks = await Promise.all(taskIds.map((id: string) => this.getTask(id)))
     return tasks.filter((t): t is Task => t !== null)
   },
@@ -284,7 +284,7 @@ export const db = {
   },
 
   async getProjectChats(projectId: string): Promise<Chat[]> {
-    const chatIds = await store.smembers<string[]>(KEYS.projectChats(projectId))
+    const chatIds = await (store.smembers as <T>(key: string) => Promise<T>)<string[]>(KEYS.projectChats(projectId))
     const chats = await Promise.all(chatIds.map((id: string) => this.getChat(id)))
     return chats
       .filter((c): c is Chat => c !== null)

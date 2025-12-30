@@ -728,24 +728,27 @@ export default function DashboardPage() {
     setInput("")
     setLoading(true)
 
+
     if (currentChat) {
+      const chatToUpdate = currentChat
       const res = await fetch("/api/chats", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: currentChat.id,
+          id: chatToUpdate.id,
           message: { role: "user", content: userMessage.content },
         }),
       })
       const data = await res.json()
       if (data.chat) {
-        const updatedchats = chats.map((c) => (c.id === currentChat.id ? data.chat : c))
+        const updatedchats = chats.map((c) => (c.id === chatToUpdate.id ? data.chat : c))
         setChats(updatedchats)
         savechatstocache(updatedchats)
         setSelectedChat(data.chat)
         currentChat = data.chat
       }
     }
+
 
     try {
       const connectionContext = connectionState === "connected"
@@ -917,19 +920,21 @@ export default function DashboardPage() {
         }
       }
 
+
       if (currentChat && assistantContent) {
+        const chatToSave = currentChat
         try {
           const res = await fetch("/api/chats", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              id: currentChat.id,
+              id: chatToSave.id,
               message: { role: "assistant", content: assistantContent, reasoning: assistantReasoning },
             }),
           })
           const data = await res.json()
           if (res.ok && data.chat) {
-            const updatedchats = chats.map((c) => (c.id === currentChat.id ? data.chat : c))
+            const updatedchats = chats.map((c) => (c.id === chatToSave.id ? data.chat : c))
             setChats(updatedchats)
             savechatstocache(updatedchats)
             setSelectedChat(data.chat)
@@ -943,14 +948,16 @@ export default function DashboardPage() {
       }
 
       if (currentChat && !currentChat.manuallyRenamed) {
+        const chatForRename = currentChat
         const newMessages = [...messages, userMessage, { id: assistantId, role: "assistant" as const, content: assistantContent }]
         const totalMessages = newMessages.length
         
         if (totalMessages <= 2 || totalMessages % 10 === 0) {
           const newName = await generateChatName(newMessages)
-          await renameChat(currentChat.id, newName, false)
+          await renameChat(chatForRename.id, newName, false)
         }
       }
+
       
       fetchBillingInfo()
     } catch (error) {
@@ -1068,7 +1075,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="border-t pt-4 space-y-2">
+        <div className="border-t pt-4 space-y-3">
           <Button 
             className="w-full justify-between gap-3 relative overflow-hidden bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 hover:from-violet-500 hover:via-purple-500 hover:to-fuchsia-500 border-0 text-white shadow-lg shadow-purple-500/25 group"
             onClick={() => router.push("/upgrade")}
@@ -1096,10 +1103,34 @@ export default function DashboardPage() {
               Keys
             </Button>
           </div>
-          <Button variant="ghost" className="w-full justify-start gap-3 text-muted-foreground" onClick={handleLogout}>
-            <LogOut className="w-4 h-4" />
-            Logout
-          </Button>
+
+          <div className="flex items-center justify-between px-2 py-2 rounded-lg bg-gradient-to-r from-muted/50 to-muted/30 border border-border/50">
+            <div className="flex items-center gap-2">
+              <div className={cn(
+                "px-2 py-0.5 rounded-md text-xs font-bold uppercase tracking-wide",
+                currentTier === "free" && "bg-slate-500/20 text-slate-400 border border-slate-500/30",
+                currentTier === "pro" && "bg-gradient-to-r from-violet-500/20 to-purple-500/20 text-violet-400 border border-violet-500/30",
+                currentTier === "studio" && "bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-400 border border-amber-500/30"
+              )}>
+                {currentTier}
+              </div>
+              {credits && (
+                <div className="flex items-center gap-1 text-xs">
+                  <Zap className="w-3 h-3 text-yellow-500" />
+                  <span className="font-semibold text-foreground">{credits.available}</span>
+                  <span className="text-muted-foreground">/ {credits.total}</span>
+                </div>
+              )}
+            </div>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-accent/50" 
+              onClick={handleLogout}
+            >
+              <LogOut className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </aside>
 
