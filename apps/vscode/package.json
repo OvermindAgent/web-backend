@@ -1,0 +1,86 @@
+{
+  "name": "overmind",
+  "displayName": "Overmind",
+  "description": "AI-powered development assistant for Roblox developers",
+  "version": "0.1.0",
+  "publisher": "overmind",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "overmind.openChat",
+        "title": "Overmind: Open Chat"
+      },
+      {
+        "command": "overmind.setApiKey",
+        "title": "Overmind: Set API Key"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "overmind",
+          "title": "Overmind",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "overmind": [
+        {
+          "type": "webview",
+          "id": "overmind.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Overmind",
+      "properties": {
+        "overmind.apiUrl": {
+          "type": "string",
+          "default": "https://overmind.vercel.app",
+          "description": "Overmind API URL"
+        },
+        "overmind.defaultPreset": {
+          "type": "string",
+          "enum": ["fast", "edit", "planning"],
+          "default": "fast",
+          "description": "Default AI preset"
+        },
+        "overmind.streaming": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable streaming responses"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "webpack --mode production",
+    "watch": "webpack --mode development --watch",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/vscode": "^1.85.0",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.7.2",
+    "webpack": "^5.97.1",
+    "webpack-cli": "^6.0.1"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

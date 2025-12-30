@@ -1,0 +1,3 @@
+[tools]
+roblox-ts = "roblox-ts/roblox-ts@2.3.0"
+rojo = "rojo-rbx/rojo@7.4.4"

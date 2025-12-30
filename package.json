@@ -1,0 +1,23 @@
+{
+  "name": "overmind",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "dev:web": "pnpm --filter @overmind/web dev"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3"
+  },
+  "packageManager": "pnpm@9.15.1",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "prism-react-renderer": "^2.4.1",
+    "web": "^0.0.2"
+  }
+}

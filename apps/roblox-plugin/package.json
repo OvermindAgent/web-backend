@@ -1,0 +1,21 @@
+{
+  "name": "@overmind/roblox-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "rbxtsc --type=model -i include",
+    "build:plugin": "rbxtsc --type=model -i include && rojo build -o overmind.rbxm",
+    "watch": "rbxtsc -w --type=model -i include"
+  },
+  "devDependencies": {
+    "@rbxts/compiler-types": "2.3.0-types.1",
+    "@rbxts/types": "^1.0.800",
+    "roblox-ts": "2.3.0",
+    "typescript": "5.5.4"
+  },
+  "dependencies": {
+    "@rbxts/roact": "^1.4.4-ts.0",
+    "@rbxts/roact-hooked": "^2.6.0",
+    "@rbxts/services": "^1.5.4"
+  }
+}
