@@ -133,6 +133,14 @@ function parseToolCalls(content: string): { text: string; tools: ToolCall[]; thi
 
 function ToolCallCard({ tool }: { tool: ToolCall }) {
   const [expanded, setExpanded] = useState(false)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [contentHeight, setContentHeight] = useState(0)
+  
+  useEffect(() => {
+    if (contentRef.current) {
+      setContentHeight(contentRef.current.scrollHeight)
+    }
+  }, [tool.args, expanded])
   
   const gettoolicon = (name: string) => {
     if (name.includes("file") || name.includes("script")) return FileCode
@@ -154,18 +162,18 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
       case "executing":
         return {
           icon: Loader2,
-          color: "text-blue-400",
-          bg: "bg-blue-500/10",
-          border: "border-blue-500/30",
+          color: "text-violet-400",
+          bg: "bg-violet-500/10",
+          border: "border-violet-500/30",
           label: "Executing...",
           spin: true
         }
       case "success":
         return {
           icon: CheckCircle2,
-          color: "text-green-400",
-          bg: "bg-green-500/10",
-          border: "border-green-500/30",
+          color: "text-emerald-400",
+          bg: "bg-emerald-500/10",
+          border: "border-emerald-500/30",
           label: "Success",
           spin: false
         }
@@ -231,32 +239,39 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
             onClick={() => setExpanded(!expanded)}
             className="p-1 rounded hover:bg-background/50 transition-colors"
           >
-            <ChevronRight className={cn(
-              "w-4 h-4 text-muted-foreground transition-transform duration-200",
-              expanded && "rotate-90"
+            <ChevronDown className={cn(
+              "w-4 h-4 text-muted-foreground transition-transform duration-300 ease-out",
+              expanded && "rotate-180"
             )} />
           </button>
         )}
       </div>
       
-      {expanded && Object.keys(tool.args).length > 0 && (
-        <div className="mt-3 pt-3 border-t border-border/30 space-y-2">
-          {Object.entries(tool.args).map(([key, value]) => (
-            <div key={key} className="text-xs">
-              <span className="text-muted-foreground font-medium">{key}:</span>
-              <pre className="mt-1 p-2 rounded bg-background/50 text-foreground font-mono overflow-x-auto">
-                {value.length > 500 ? value.substring(0, 500) + "..." : value}
-              </pre>
+      <div 
+        className="overflow-hidden transition-all duration-300 ease-out"
+        style={{ height: expanded ? contentHeight : 0 }}
+      >
+        <div ref={contentRef}>
+          {Object.keys(tool.args).length > 0 && (
+            <div className="mt-3 pt-3 border-t border-border/30 space-y-2">
+              {Object.entries(tool.args).map(([key, value]) => (
+                <div key={key} className="text-xs">
+                  <span className="text-muted-foreground font-medium">{key}:</span>
+                  <pre className="mt-1 p-2 rounded bg-background/50 text-foreground font-mono overflow-x-auto">
+                    {value.length > 500 ? value.substring(0, 500) + "..." : value}
+                  </pre>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
+          
+          {tool.status === "success" && tool.result && (
+            <div className="mt-2 pt-2 border-t border-border/30">
+              <p className="text-xs text-emerald-400">✓ {tool.result}</p>
+            </div>
+          )}
         </div>
-      )}
-      
-      {tool.status === "success" && tool.result && (
-        <div className="mt-2 pt-2 border-t border-border/30">
-          <p className="text-xs text-green-400">✓ {tool.result}</p>
-        </div>
-      )}
+      </div>
     </div>
   )
 }
@@ -792,6 +807,7 @@ export default function DashboardPage() {
       let assistantReasoning = ""
       const assistantId = crypto.randomUUID()
       const toolStatuses: Record<string, { status: ToolStatus; result?: string; error?: string }> = {}
+      let streamBuffer = ""
 
       setMessages((prev) => [
         ...prev,
@@ -803,8 +819,9 @@ export default function DashboardPage() {
         const { done, value } = await reader.read()
         if (done) break
 
-        const chunk = decoder.decode(value)
-        const lines = chunk.split("\n")
+        streamBuffer += decoder.decode(value, { stream: true })
+        const lines = streamBuffer.split("\n")
+        streamBuffer = lines.pop() || ""
 
         for (const line of lines) {
           if (line.startsWith("data: ")) {
@@ -1104,28 +1121,31 @@ export default function DashboardPage() {
             </Button>
           </div>
 
-          <div className="flex items-center justify-between px-2 py-2 rounded-lg bg-gradient-to-r from-muted/50 to-muted/30 border border-border/50">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-gradient-to-r from-violet-500/10 via-purple-500/10 to-fuchsia-500/10 border border-violet-500/20">
+            <div className="flex items-center gap-2.5">
               <div className={cn(
-                "px-2 py-0.5 rounded-md text-xs font-bold uppercase tracking-wide",
-                currentTier === "free" && "bg-slate-500/20 text-slate-400 border border-slate-500/30",
-                currentTier === "pro" && "bg-gradient-to-r from-violet-500/20 to-purple-500/20 text-violet-400 border border-violet-500/30",
-                currentTier === "studio" && "bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-400 border border-amber-500/30"
+                "px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider",
+                currentTier === "free" && "bg-violet-500/20 text-violet-300 border border-violet-400/30",
+                currentTier === "pro" && "bg-gradient-to-r from-violet-500/30 to-fuchsia-500/30 text-violet-300 border border-violet-400/40",
+                currentTier === "studio" && "bg-gradient-to-r from-amber-500/30 to-orange-500/30 text-amber-300 border border-amber-400/40"
               )}>
                 {currentTier}
               </div>
               {credits && (
-                <div className="flex items-center gap-1 text-xs">
-                  <Zap className="w-3 h-3 text-yellow-500" />
-                  <span className="font-semibold text-foreground">{credits.available}</span>
-                  <span className="text-muted-foreground">/ {credits.total}</span>
+                <div className="flex items-center gap-1.5 text-xs">
+                  <div className="p-1 rounded-md bg-violet-500/20">
+                    <Zap className="w-3 h-3 text-violet-400" />
+                  </div>
+                  <span className="font-bold text-foreground">{credits.available}</span>
+                  <span className="text-muted-foreground/70">/</span>
+                  <span className="text-muted-foreground">{credits.total}</span>
                 </div>
               )}
             </div>
             <Button 
               variant="ghost" 
               size="icon" 
-              className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-accent/50" 
+              className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-violet-500/10 transition-colors" 
               onClick={handleLogout}
             >
               <LogOut className="w-4 h-4" />

@@ -26,6 +26,7 @@ export default function LoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
+        credentials: "include",
       })
 
       const data = await response.json()
@@ -34,10 +35,9 @@ export default function LoginPage() {
         throw new Error(data.error || "Login failed")
       }
 
-      router.push("/dashboard")
+      window.location.href = "/dashboard"
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed")
-    } finally {
       setLoading(false)
     }
   }

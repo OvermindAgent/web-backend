@@ -39,6 +39,7 @@ export default function RegisterPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, displayName }),
+        credentials: "include",
       })
 
       const data = await response.json()
@@ -47,10 +48,9 @@ export default function RegisterPage() {
         throw new Error(data.error || "Registration failed")
       }
 
-      router.push("/dashboard")
+      window.location.href = "/dashboard"
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed")
-    } finally {
       setLoading(false)
     }
   }
