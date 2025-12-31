@@ -1158,29 +1158,8 @@ export default function DashboardPage() {
         <header className="border-b bg-card/50 p-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <h1 className="text-lg font-semibold">Chat</h1>
-            <div className="h-4 w-px bg-border"></div>
-            <div className="flex items-center gap-3 text-sm">
-              <span className={cn(
-                "font-medium capitalize",
-                currentTier === "free" && "text-slate-400",
-                currentTier === "pro" && "text-violet-400",
-                currentTier === "studio" && "text-amber-400"
-              )}>
-                {currentTier}
-              </span>
-              {credits && (
-                <>
-                  <span className="text-muted-foreground">•</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-semibold tabular-nums">{credits.available}</span>
-                    <span className="text-muted-foreground">/</span>
-                    <span className="text-muted-foreground tabular-nums">{credits.total}</span>
-                    <span className="text-muted-foreground text-xs">credits</span>
-                  </div>
-                </>
-              )}
-            </div>
           </div>
+
           
           <div className="flex items-center gap-3">
             <Button
