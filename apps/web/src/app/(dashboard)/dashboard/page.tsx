@@ -311,7 +311,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false)
   const [showPresets, setShowPresets] = useState(false)
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected")
-  const [ws, setWs] = useState<WebSocket | null>(null)
+  const connectionCheckRef = useRef<NodeJS.Timeout | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const [projects, setProjects] = useState<Project[]>([])
@@ -650,67 +650,89 @@ export default function DashboardPage() {
     } catch {}
   }
 
-  function handleConnect() {
-    if (connectionState === "connected" && ws) {
-      ws.close()
-      setWs(null)
+  async function checkPluginConnection() {
+    if (!selectedProject) return false
+    try {
+      const res = await fetch("/api/rivet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "check_connection",
+          source: "web",
+          data: { targetProjectId: selectedProject.id },
+        }),
+      })
+      const data = await res.json()
+      return data.connected === true
+    } catch {
+      return false
+    }
+  }
+
+  async function handleConnect() {
+    if (connectionState === "connected") {
+      if (connectionCheckRef.current) {
+        clearInterval(connectionCheckRef.current)
+        connectionCheckRef.current = null
+      }
       setConnectionState("disconnected")
       return
     }
 
     setConnectionState("connecting")
     
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:3001"
-    const socket = new WebSocket(wsUrl)
-
-    socket.onopen = () => {
-      console.log("[WS] Connected, sending auth...")
-      socket.send(JSON.stringify({
-        type: "auth",
-        source: "web",
-        projectId: selectedProject?.id,
-        payload: {}
-      }))
-    }
-
-    socket.onclose = () => {
-      setConnectionState("disconnected")
-      setWs(null)
-    }
-
-    socket.onerror = () => {
-      setConnectionState("disconnected")
-      setWs(null)
-    }
-
-    socket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        console.log("[WS] Received:", data)
-        
-        if (data.type === "auth" && data.payload?.success) {
-          console.log("[WS] Authenticated successfully")
-          setConnectionState("connected")
-          setWs(socket)
+    const isConnected = await checkPluginConnection()
+    if (isConnected) {
+      setConnectionState("connected")
+      connectionCheckRef.current = setInterval(async () => {
+        const stillConnected = await checkPluginConnection()
+        if (!stillConnected) {
+          setConnectionState("disconnected")
+          if (connectionCheckRef.current) {
+            clearInterval(connectionCheckRef.current)
+            connectionCheckRef.current = null
+          }
         }
-      } catch {
-        console.log("[WS] Raw message:", event.data)
-      }
+      }, 5000)
+    } else {
+      setConnectionState("disconnected")
     }
   }
 
-  function emitSignal(action: string, payload: Record<string, unknown>) {
-    if (!ws || connectionState !== "connected") {
-      console.warn("[WS] Cannot emit signal: not connected")
+  async function emitSignal(action: string, payload: Record<string, unknown>): Promise<boolean> {
+    if (!selectedProject) {
+      console.warn("[Rivet] Cannot emit signal: no project selected")
       return false
     }
     
-    console.log("[WS] Emitting signal:", action, payload)
-    ws.send(JSON.stringify({
-      type: "signal",
-      payload: { action, ...payload }
-    }))
-    return true
+    try {
+      console.log("[Rivet] Sending signal:", action, payload)
+      const res = await fetch("/api/rivet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "send_signal",
+          source: "web",
+          data: {
+            signalAction: action,
+            signalData: payload,
+            targetProjectId: selectedProject.id,
+          },
+        }),
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        if (!data.pluginConnected) {
+          console.warn("[Rivet] Signal sent but plugin not connected")
+        }
+        return true
+      }
+      return false
+    } catch (e) {
+      console.error("[Rivet] Failed to send signal:", e)
+      return false
+    }
   }
 
   async function handleSend() {
@@ -852,11 +874,11 @@ export default function DashboardPage() {
                   const action = toolCall.args.action as string
                   const payload = toolCall.args.payload as Record<string, unknown>
                   console.log("[Chat] Emitting signal to Roblox:", action)
-                  signalSent = emitSignal(action, { data: payload })
+                  signalSent = await emitSignal(action, { data: payload })
                   if (!signalSent) errorMsg = "Failed to send signal"
                 } else if (toolCall.name === "create_file") {
                   console.log("[Chat] Emitting create_script signal")
-                  signalSent = emitSignal("create_script", { 
+                  signalSent = await emitSignal("create_script", { 
                     data: { 
                       path: toolCall.args.path, 
                       content: toolCall.args.content 
@@ -865,7 +887,7 @@ export default function DashboardPage() {
                   if (!signalSent) errorMsg = "Failed to create file"
                 } else if (toolCall.name === "update_file") {
                   console.log("[Chat] Emitting update_script signal")
-                  signalSent = emitSignal("update_script", { 
+                  signalSent = await emitSignal("update_script", { 
                     data: { 
                       path: toolCall.args.path, 
                       content: toolCall.args.content 
@@ -874,7 +896,7 @@ export default function DashboardPage() {
                   if (!signalSent) errorMsg = "Failed to update file"
                 } else if (toolCall.name === "delete_file") {
                   console.log("[Chat] Emitting delete_file signal")
-                  signalSent = emitSignal("delete_file", { 
+                  signalSent = await emitSignal("delete_file", { 
                     data: { 
                       path: toolCall.args.path 
                     } 

@@ -20,6 +20,7 @@
     "@radix-ui/react-slot": "^1.1.0",
     "@radix-ui/react-tabs": "^1.1.2",
     "@radix-ui/react-toast": "^1.2.4",
+    "@rivetkit/next-js": "^2.0.32",
     "@tailwindcss/typography": "^0.5.19",
     "@vercel/kv": "^3.0.0",
     "bcryptjs": "^2.4.3",
@@ -32,6 +33,7 @@
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "rivetkit": "^2.0.32",
     "tailwind-merge": "^2.6.0",
     "uuid": "^11.0.3",
     "ws": "^8.18.0"

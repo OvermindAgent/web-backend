@@ -2,10 +2,9 @@ import Roact from "@rbxts/roact"
 import { useState, useEffect, withHooks } from "@rbxts/roact-hooked"
 import { LoginView } from "./ui/login"
 import { ChatView } from "./ui/chat"
-import { WebSocketClient } from "./websocket"
+import { HttpClient } from "./http-client"
 import { handleSignal } from "./signals"
 import { SignalAction } from "./types"
-import { CONFIG } from "./config"
 
 type AppState = "login" | "connecting" | "chat"
 
@@ -23,11 +22,11 @@ function AppComponent(): Roact.Element {
 	const [inputText, setInputText] = useState("")
 	const [preset, setPreset] = useState<"fast" | "edit" | "planning">("fast")
 	const [isLoading, setIsLoading] = useState(false)
-	const [client] = useState(() => new WebSocketClient())
+	const [client] = useState(() => new HttpClient())
 
 	useEffect(() => {
 		const stateConnection = client.onStateChange.Event.Connect((newState: string) => {
-			if (newState === "authenticated") {
+			if (newState === "connected") {
 				setState("chat")
 				setErrorMsg(undefined)
 			} else if (newState === "disconnected") {
@@ -43,24 +42,9 @@ function AppComponent(): Roact.Element {
 			handleSignal(action, data)
 		})
 
-		const messageConnection = client.onMessage.Event.Connect((message: { type: string; payload?: { content?: string } }) => {
-			if (message.type === "chat" && message.payload?.content) {
-				setMessages((prev) => [
-					...prev,
-					{
-						id: tostring(tick()),
-						role: "assistant",
-						content: message.payload!.content!,
-					},
-				])
-				setIsLoading(false)
-			}
-		})
-
 		return () => {
 			stateConnection.Disconnect()
 			signalConnection.Disconnect()
-			messageConnection.Disconnect()
 		}
 	}, [])
 
@@ -89,8 +73,6 @@ function AppComponent(): Roact.Element {
 		setMessages((prev) => [...prev, userMessage])
 		setInputText("")
 		setIsLoading(true)
-
-		client.sendChat(inputText, preset)
 	}
 
 	if (state === "login" || state === "connecting") {
