@@ -7,7 +7,7 @@ const toolbar = plugin.CreateToolbar(CONFIG.PLUGIN_NAME)
 const button = toolbar.CreateButton(
 	"Open Overmind",
 	"Open the Overmind AI assistant",
-	"rbxassetid://0",
+	"rbxassetid://16029524022",
 	"Overmind"
 )
 

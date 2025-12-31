@@ -9,7 +9,8 @@
     "KV_URL",
     "AI_API_URL",
     "AI_API_KEY",
-    "NEXT_PUBLIC_WS_URL"
+    "NEXT_PUBLIC_WS_URL",
+    "INTERNAL_PROMPT"
   ],
   "tasks": {
     "build": {

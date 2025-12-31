@@ -305,6 +305,7 @@ function ReasoningSection({ reasoning }: { reasoning: string }) {
 export default function DashboardPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const [user, setUser] = useState<{ id: string; email: string; displayName: string } | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [preset, setPreset] = useState<Preset>("fast")
@@ -424,7 +425,16 @@ export default function DashboardPage() {
     }, 120)
   }
 
+  async function fetchUser() {
+    try {
+      const res = await fetch("/api/auth/me")
+      const data = await res.json()
+      if (data) setUser(data)
+    } catch {}
+  }
+
   useEffect(() => {
+    fetchUser()
     fetchProjects()
     fetchBillingInfo()
   }, [])
@@ -680,6 +690,23 @@ export default function DashboardPage() {
     }
 
     setConnectionState("connecting")
+    
+    // Handshake Part 1: Broadcast discovery to all user's plugins
+    if (user) {
+      await fetch("/api/rivet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "send_signal",
+          source: "web",
+          data: {
+            signalAction: "WEB_DISCOVERY",
+            signalData: { timestamp: Date.now() },
+            targetUserId: user.id
+          },
+        }),
+      })
+    }
     
     const isConnected = await checkPluginConnection()
     if (isConnected) {

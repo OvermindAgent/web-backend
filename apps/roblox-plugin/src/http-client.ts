@@ -19,16 +19,15 @@ export class HttpClient {
 	private apiKey?: string
 	private isPolling = false
 	private shouldPoll = false
+	private pollInterval = CONFIG.POLL_INTERVAL
 
 	public onStateChange = new Instance("BindableEvent")
 	public onSignal = new Instance("BindableEvent")
 
 	public connect(apiKey: string): void {
-		if (this.state !== "disconnected") {
-			return
-		}
-
 		this.apiKey = apiKey
+		if (this.state === "connected") return
+		
 		this.doConnect()
 	}
 
@@ -38,13 +37,22 @@ export class HttpClient {
 		const success = this.sendRequest("connect")
 		if (success) {
 			this.setState("connected")
+			this.pollInterval = CONFIG.POLL_INTERVAL
 			this.startPolling()
+			
+			// Notify web that we are connected
+			this.sendRequest("send_signal", {
+				signalAction: "PLUGIN_CONNECTED",
+				signalData: { timestamp: os.time() }
+			})
 		} else {
 			this.setState("disconnected")
 		}
 	}
 
 	private sendRequest(action: string, extraData?: Record<string, unknown>): boolean {
+		if (!this.apiKey) return false
+		
 		try {
 			const body = {
 				action,
@@ -67,33 +75,30 @@ export class HttpClient {
 				return (data as { success?: boolean }).success === true
 			}
 
-			warn(`[Overmind] Request failed: ${response.StatusCode} - ${response.Body}`)
 			return false
 		} catch (e) {
-			warn(`[Overmind] Request error: ${e}`)
 			return false
 		}
 	}
 
-	private startPolling(): void {
+	public startPolling(apiKey?: string): void {
+		if (apiKey) this.apiKey = apiKey
+		if (!this.apiKey) return
+		
 		if (this.isPolling) return
 		this.isPolling = true
 		this.shouldPoll = true
 
 		task.spawn(() => {
 			while (this.shouldPoll) {
-				if (this.state !== "connected") {
-					break
-				}
-				
 				this.poll()
-				task.wait(CONFIG.POLL_INTERVAL)
+				task.wait(this.pollInterval)
 			}
 			this.isPolling = false
 		})
 	}
 
-	private stopPolling(): void {
+	public stopPolling(): void {
 		this.shouldPoll = false
 	}
 
@@ -111,30 +116,40 @@ export class HttpClient {
 
 			if (!response.Success) {
 				if (response.StatusCode === 401) {
-					print("[Overmind] Session expired, disconnecting")
-					this.setState("disconnected")
-					this.stopPolling()
+					if (this.state === "connected") {
+						this.setState("disconnected")
+						this.pollInterval = 5 // Slow down on disconnect
+					}
 				}
 				return
 			}
 
 			const data = HttpService.JSONDecode(response.Body) as PollResponse
 
-			if (!data.connected) {
-				print("[Overmind] Server reports disconnected")
+			if (this.state === "connected" && !data.connected) {
 				this.setState("disconnected")
-				this.stopPolling()
+				this.pollInterval = 5
 				return
+			} else if (this.state === "disconnected" && data.connected) {
+				this.setState("connected")
+				this.pollInterval = CONFIG.POLL_INTERVAL
 			}
 
 			if (data.signals && data.signals.size() > 0) {
 				for (const signal of data.signals) {
-					print(`[Overmind] Received signal: ${signal.action}`)
+					print(`[Overmind] Signal: ${signal.action}`)
+					
+					// Handshake: Auto-connect if web asks
+					if (signal.action === "WEB_DISCOVERY" && this.state !== "connected") {
+						print("[Overmind] Auto-connecting via web discovery")
+						this.doConnect()
+					}
+					
 					this.onSignal.Fire(signal.action, signal.data)
 				}
 			}
 		} catch (e) {
-			warn(`[Overmind] Poll error: ${e}`)
+			// ignore poll errors to prevent spam
 		}
 	}
 
@@ -142,7 +157,7 @@ export class HttpClient {
 		if (this.state === newState) return
 		this.state = newState
 		this.onStateChange.Fire(newState)
-		print(`[Overmind] Connection state: ${newState}`)
+		print(`[Overmind] Connection: ${newState}`)
 	}
 
 	public getState(): ConnectionState {
@@ -150,10 +165,10 @@ export class HttpClient {
 	}
 
 	public disconnect(): void {
-		this.stopPolling()
 		if (this.apiKey) {
 			this.sendRequest("disconnect")
 		}
 		this.setState("disconnected")
+		this.pollInterval = 5 // Stay in standby
 	}
 }

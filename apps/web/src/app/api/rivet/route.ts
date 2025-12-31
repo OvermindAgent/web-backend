@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { authenticate } from "@/lib/auth/middleware"
 import { db } from "@/lib/db/kv"
+import { validateApiKey } from "@/lib/auth/keys"
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,7 +14,10 @@ export async function POST(request: NextRequest) {
       }
 
       if (action === "connect") {
-        await db.setRivetConnection(apiKey, { lastPing: Date.now(), userId: data?.userId })
+        const auth = await validateApiKey(apiKey)
+        let userId = auth.valid ? auth.userId : data?.userId
+
+        await db.setRivetConnection(apiKey, { lastPing: Date.now(), userId })
         return NextResponse.json({ success: true, message: "Connected" })
       }
 
@@ -56,10 +60,11 @@ export async function POST(request: NextRequest) {
       }
 
       if (action === "send_signal") {
-        const { signalAction, signalData, targetApiKey } = data as { 
+        const { signalAction, signalData, targetApiKey, targetUserId } = data as { 
           signalAction: string
           signalData: Record<string, unknown>
           targetApiKey?: string
+          targetUserId?: string
         }
 
         if (!signalAction) {
@@ -68,14 +73,6 @@ export async function POST(request: NextRequest) {
 
         const connections = await db.getActiveRivetConnections()
         
-        if (connections.length === 0) {
-          return NextResponse.json({ 
-            success: false, 
-            error: "No Roblox plugin connected",
-            pluginConnected: false 
-          })
-        }
-
         const signal = {
           id: crypto.randomUUID(),
           action: signalAction,
@@ -84,7 +81,10 @@ export async function POST(request: NextRequest) {
 
         let sentCount = 0
         for (const conn of connections) {
-          if (!targetApiKey || conn.apiKey === targetApiKey) {
+          const matchesKey = !targetApiKey || conn.apiKey === targetApiKey
+          const matchesUser = !targetUserId || conn.userId === targetUserId
+          
+          if (matchesKey && matchesUser) {
             await db.pushRivetSignal(conn.apiKey, signal)
             sentCount++
           }

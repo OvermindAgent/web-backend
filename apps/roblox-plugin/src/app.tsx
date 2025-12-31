@@ -25,6 +25,11 @@ function AppComponent(): Roact.Element {
 	const [client] = useState(() => new HttpClient())
 
 	useEffect(() => {
+		// Auto-start polling if we have a key
+		if (apiKey.size() > 0) {
+			client.startPolling(apiKey)
+		}
+
 		const stateConnection = client.onStateChange.Event.Connect((newState: string) => {
 			if (newState === "connected") {
 				setState("chat")
@@ -47,6 +52,12 @@ function AppComponent(): Roact.Element {
 			signalConnection.Disconnect()
 		}
 	}, [])
+
+	useEffect(() => {
+		if (apiKey.size() > 0) {
+			client.startPolling(apiKey)
+		}
+	}, [apiKey])
 
 	function handleConnect() {
 		if (apiKey.size() === 0) {
