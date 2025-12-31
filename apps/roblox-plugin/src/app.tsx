@@ -31,14 +31,14 @@ function AppComponent(): Roact.Element {
 				setErrorMsg(undefined)
 			} else if (newState === "disconnected") {
 				if (state === "connecting") {
-					setErrorMsg("Connection failed")
+					setErrorMsg("Connection failed - check your API key")
 				}
 				setState("login")
 			}
 		})
 
 		const signalConnection = client.onSignal.Event.Connect((action: SignalAction, data: Record<string, unknown>) => {
-			print(`[Overmind] Signal received: ${action}`, data)
+			print(`[Overmind] Executing signal: ${action}`)
 			handleSignal(action, data)
 		})
 
@@ -49,10 +49,13 @@ function AppComponent(): Roact.Element {
 	}, [])
 
 	function handleConnect() {
-		if (apiKey.size() === 0) return
+		if (apiKey.size() === 0) {
+			setErrorMsg("Please enter your API key")
+			return
+		}
 		setErrorMsg(undefined)
 		setState("connecting")
-		client.connect(apiKey, "default")
+		client.connect(apiKey)
 	}
 
 	function handleDisconnect() {

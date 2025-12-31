@@ -17,20 +17,18 @@ interface PollResponse {
 export class HttpClient {
 	private state: ConnectionState = "disconnected"
 	private apiKey?: string
-	private projectId?: string
-	private pollThread?: thread
 	private isPolling = false
+	private shouldPoll = false
 
 	public onStateChange = new Instance("BindableEvent")
 	public onSignal = new Instance("BindableEvent")
 
-	public connect(apiKey: string, projectId: string): void {
+	public connect(apiKey: string): void {
 		if (this.state !== "disconnected") {
 			return
 		}
 
 		this.apiKey = apiKey
-		this.projectId = projectId
 		this.doConnect()
 	}
 
@@ -51,7 +49,6 @@ export class HttpClient {
 			const body = {
 				action,
 				apiKey: this.apiKey,
-				projectId: this.projectId,
 				source: "roblox",
 				data: extraData,
 			}
@@ -70,7 +67,7 @@ export class HttpClient {
 				return (data as { success?: boolean }).success === true
 			}
 
-			warn(`[Overmind] Request failed: ${response.StatusCode}`)
+			warn(`[Overmind] Request failed: ${response.StatusCode} - ${response.Body}`)
 			return false
 		} catch (e) {
 			warn(`[Overmind] Request error: ${e}`)
@@ -81,24 +78,28 @@ export class HttpClient {
 	private startPolling(): void {
 		if (this.isPolling) return
 		this.isPolling = true
+		this.shouldPoll = true
 
-		this.pollThread = task.spawn(() => {
-			while (this.isPolling && this.state === "connected") {
+		task.spawn(() => {
+			while (this.shouldPoll) {
+				if (this.state !== "connected") {
+					break
+				}
+				
 				this.poll()
 				task.wait(CONFIG.POLL_INTERVAL)
 			}
+			this.isPolling = false
 		})
 	}
 
 	private stopPolling(): void {
-		this.isPolling = false
-		if (this.pollThread) {
-			task.cancel(this.pollThread)
-			this.pollThread = undefined
-		}
+		this.shouldPoll = false
 	}
 
 	private poll(): void {
+		if (!this.apiKey) return
+		
 		try {
 			const response = HttpService.RequestAsync({
 				Url: `${CONFIG.API_URL}/api/rivet?apiKey=${this.apiKey}`,
@@ -110,6 +111,7 @@ export class HttpClient {
 
 			if (!response.Success) {
 				if (response.StatusCode === 401) {
+					print("[Overmind] Session expired, disconnecting")
 					this.setState("disconnected")
 					this.stopPolling()
 				}
@@ -119,14 +121,17 @@ export class HttpClient {
 			const data = HttpService.JSONDecode(response.Body) as PollResponse
 
 			if (!data.connected) {
+				print("[Overmind] Server reports disconnected")
 				this.setState("disconnected")
 				this.stopPolling()
 				return
 			}
 
-			for (const signal of data.signals) {
-				print(`[Overmind] Received signal: ${signal.action}`)
-				this.onSignal.Fire(signal.action, signal.data)
+			if (data.signals && data.signals.size() > 0) {
+				for (const signal of data.signals) {
+					print(`[Overmind] Received signal: ${signal.action}`)
+					this.onSignal.Fire(signal.action, signal.data)
+				}
 			}
 		} catch (e) {
 			warn(`[Overmind] Poll error: ${e}`)
@@ -146,11 +151,9 @@ export class HttpClient {
 
 	public disconnect(): void {
 		this.stopPolling()
-		this.sendRequest("disconnect")
+		if (this.apiKey) {
+			this.sendRequest("disconnect")
+		}
 		this.setState("disconnected")
-	}
-
-	public ping(): boolean {
-		return this.sendRequest("ping")
 	}
 }

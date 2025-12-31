@@ -1,84 +1,90 @@
 import { NextRequest, NextResponse } from "next/server"
 import { authenticate } from "@/lib/auth/middleware"
+import { kv } from "@vercel/kv"
 
-type Signal = {
-  id: string
-  action: string
-  data: Record<string, unknown>
-  timestamp: number
-  processed: boolean
+const CONNECTION_TTL = 60
+const SIGNAL_TTL = 30
+
+function getConnectionKey(apiKey: string) {
+  return `rivet:conn:${apiKey}`
 }
 
-const signalQueues = new Map<string, Signal[]>()
-const pluginConnections = new Map<string, { lastPing: number; projectId: string }>()
-
-const SIGNAL_TTL = 30000
-const CONNECTION_TTL = 60000
-
-function cleanupOldSignals(projectId: string) {
-  const queue = signalQueues.get(projectId)
-  if (!queue) return
-  
-  const now = Date.now()
-  const filtered = queue.filter(s => now - s.timestamp < SIGNAL_TTL && !s.processed)
-  signalQueues.set(projectId, filtered)
+function getSignalQueueKey(apiKey: string) {
+  return `rivet:signals:${apiKey}`
 }
 
-function cleanupOldConnections() {
-  const now = Date.now()
-  for (const [apiKey, conn] of pluginConnections) {
-    if (now - conn.lastPing > CONNECTION_TTL) {
-      pluginConnections.delete(apiKey)
+function getAllConnectionsPattern() {
+  return "rivet:conn:*"
+}
+
+async function getActiveConnections(): Promise<{ apiKey: string; lastPing: number; userId?: string }[]> {
+  try {
+    const keys = await kv.keys(getAllConnectionsPattern())
+    const connections: { apiKey: string; lastPing: number; userId?: string }[] = []
+    
+    for (const key of keys) {
+      const data = await kv.get<{ lastPing: number; userId?: string }>(key)
+      if (data) {
+        const apiKey = key.replace("rivet:conn:", "")
+        connections.push({ apiKey, ...data })
+      }
     }
+    
+    return connections
+  } catch {
+    return []
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { action, apiKey, projectId, data, source } = body
+    const { action, apiKey, data, source } = body
 
     if (source === "roblox") {
       if (!apiKey) {
         return NextResponse.json({ error: "API key required" }, { status: 401 })
       }
 
+      const connKey = getConnectionKey(apiKey)
+
       if (action === "connect") {
-        pluginConnections.set(apiKey, { lastPing: Date.now(), projectId })
+        await kv.set(connKey, { lastPing: Date.now(), userId: data?.userId }, { ex: CONNECTION_TTL })
         return NextResponse.json({ success: true, message: "Connected" })
       }
 
       if (action === "ping") {
-        const conn = pluginConnections.get(apiKey)
+        const conn = await kv.get(connKey)
         if (conn) {
-          conn.lastPing = Date.now()
+          await kv.set(connKey, { ...conn, lastPing: Date.now() }, { ex: CONNECTION_TTL })
           return NextResponse.json({ success: true })
         }
         return NextResponse.json({ error: "Not connected" }, { status: 401 })
       }
 
       if (action === "poll") {
-        const conn = pluginConnections.get(apiKey)
+        const conn = await kv.get(connKey)
         if (!conn) {
-          return NextResponse.json({ error: "Not connected" }, { status: 401 })
+          return NextResponse.json({ connected: false, signals: [] })
         }
         
-        conn.lastPing = Date.now()
-        cleanupOldSignals(conn.projectId)
+        await kv.set(connKey, { ...conn, lastPing: Date.now() }, { ex: CONNECTION_TTL })
         
-        const queue = signalQueues.get(conn.projectId) || []
-        const pending = queue.filter(s => !s.processed)
+        const signalKey = getSignalQueueKey(apiKey)
+        const signals = await kv.lrange<{ id: string; action: string; data: Record<string, unknown> }>(signalKey, 0, -1) || []
         
-        pending.forEach(s => s.processed = true)
+        if (signals.length > 0) {
+          await kv.del(signalKey)
+        }
         
         return NextResponse.json({ 
-          success: true, 
-          signals: pending.map(s => ({ id: s.id, action: s.action, data: s.data }))
+          connected: true, 
+          signals 
         })
       }
 
       if (action === "disconnect") {
-        pluginConnections.delete(apiKey)
+        await kv.del(connKey)
         return NextResponse.json({ success: true, message: "Disconnected" })
       }
 
@@ -92,59 +98,59 @@ export async function POST(request: NextRequest) {
       }
 
       if (action === "send_signal") {
-        const { signalAction, signalData, targetProjectId } = data as { 
+        const { signalAction, signalData, targetApiKey } = data as { 
           signalAction: string
           signalData: Record<string, unknown>
-          targetProjectId: string 
+          targetApiKey?: string
         }
 
-        if (!targetProjectId || !signalAction) {
-          return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+        if (!signalAction) {
+          return NextResponse.json({ error: "Missing signal action" }, { status: 400 })
         }
 
-        const signal: Signal = {
+        const connections = await getActiveConnections()
+        
+        if (connections.length === 0) {
+          return NextResponse.json({ 
+            success: false, 
+            error: "No Roblox plugin connected",
+            pluginConnected: false 
+          })
+        }
+
+        const signal = {
           id: crypto.randomUUID(),
           action: signalAction,
           data: signalData || {},
-          timestamp: Date.now(),
-          processed: false,
         }
 
-        const queue = signalQueues.get(targetProjectId) || []
-        queue.push(signal)
-        signalQueues.set(targetProjectId, queue)
-
-        cleanupOldSignals(targetProjectId)
-
-        let isPluginConnected = false
-        for (const [, conn] of pluginConnections) {
-          if (conn.projectId === targetProjectId && Date.now() - conn.lastPing < CONNECTION_TTL) {
-            isPluginConnected = true
-            break
+        let sentCount = 0
+        for (const conn of connections) {
+          if (!targetApiKey || conn.apiKey === targetApiKey) {
+            const signalKey = getSignalQueueKey(conn.apiKey)
+            await kv.rpush(signalKey, signal)
+            await kv.expire(signalKey, SIGNAL_TTL)
+            sentCount++
           }
         }
 
         return NextResponse.json({ 
           success: true, 
           signalId: signal.id,
-          pluginConnected: isPluginConnected,
+          pluginConnected: sentCount > 0,
+          sentTo: sentCount,
         })
       }
 
       if (action === "check_connection") {
-        const { targetProjectId } = data as { targetProjectId: string }
-        
-        cleanupOldConnections()
-        
-        let isConnected = false
-        for (const [, conn] of pluginConnections) {
-          if (conn.projectId === targetProjectId && Date.now() - conn.lastPing < CONNECTION_TTL) {
-            isConnected = true
-            break
-          }
-        }
+        const connections = await getActiveConnections()
+        const isConnected = connections.length > 0
 
-        return NextResponse.json({ success: true, connected: isConnected })
+        return NextResponse.json({ 
+          success: true, 
+          connected: isConnected,
+          connectionCount: connections.length,
+        })
       }
 
       return NextResponse.json({ error: "Unknown action" }, { status: 400 })
@@ -165,20 +171,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "API key required" }, { status: 401 })
   }
 
-  const conn = pluginConnections.get(apiKey)
+  const connKey = getConnectionKey(apiKey)
+  const conn = await kv.get<{ lastPing: number }>(connKey)
+  
   if (!conn) {
     return NextResponse.json({ connected: false, signals: [] })
   }
 
-  conn.lastPing = Date.now()
-  cleanupOldSignals(conn.projectId)
+  await kv.set(connKey, { ...conn, lastPing: Date.now() }, { ex: CONNECTION_TTL })
 
-  const queue = signalQueues.get(conn.projectId) || []
-  const pending = queue.filter(s => !s.processed)
-  pending.forEach(s => s.processed = true)
+  const signalKey = getSignalQueueKey(apiKey)
+  const signals = await kv.lrange<{ id: string; action: string; data: Record<string, unknown> }>(signalKey, 0, -1) || []
+  
+  if (signals.length > 0) {
+    await kv.del(signalKey)
+  }
 
   return NextResponse.json({ 
     connected: true,
-    signals: pending.map(s => ({ id: s.id, action: s.action, data: s.data }))
+    signals 
   })
 }
