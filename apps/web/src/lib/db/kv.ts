@@ -114,7 +114,10 @@ const KEYS = {
   projectConversation: (projectId: string) => `project:${projectId}:conversation`,
   chat: (id: string) => `chat:${id}`,
   projectChats: (projectId: string) => `project:${projectId}:chats`,
+  rivetConnection: (apiKey: string) => `rivet:conn:${apiKey}`,
+  rivetSignals: (apiKey: string) => `rivet:signals:${apiKey}`,
 }
+
 
 const isProduction = process.env.NODE_ENV === "production"
 const hasKvConfig = !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN)
@@ -304,5 +307,70 @@ export const db = {
     
     await store.set(KEYS.chat(chatId), updatedChat)
     return updatedChat
+  },
+
+  async setRivetConnection(apiKey: string, data: { lastPing: number; userId?: string }): Promise<void> {
+    await store.set(KEYS.rivetConnection(apiKey), data, { ex: 60 })
+  },
+
+  async getRivetConnection(apiKey: string): Promise<{ lastPing: number; userId?: string } | null> {
+    return await store.get<{ lastPing: number; userId?: string }>(KEYS.rivetConnection(apiKey))
+  },
+
+  async deleteRivetConnection(apiKey: string): Promise<void> {
+    await store.del(KEYS.rivetConnection(apiKey))
+  },
+
+  async getActiveRivetConnections(): Promise<{ apiKey: string; lastPing: number; userId?: string }[]> {
+    const connections: { apiKey: string; lastPing: number; userId?: string }[] = []
+    
+    if (hasKvConfig) {
+      try {
+        const keys = await kv.keys("rivet:conn:*")
+        for (const key of keys) {
+          const data = await kv.get<{ lastPing: number; userId?: string }>(key)
+          if (data) {
+            const apiKey = key.replace("rivet:conn:", "")
+            connections.push({ apiKey, ...data })
+          }
+        }
+      } catch {}
+    } else {
+      for (const [key, value] of memoryStore.entries()) {
+        if (key.startsWith("rivet:conn:")) {
+          const apiKey = key.replace("rivet:conn:", "")
+          connections.push({ apiKey, ...(value as { lastPing: number; userId?: string }) })
+        }
+      }
+    }
+    
+    return connections
+  },
+
+  async pushRivetSignal(apiKey: string, signal: { id: string; action: string; data: Record<string, unknown> }): Promise<void> {
+    const key = KEYS.rivetSignals(apiKey)
+    if (hasKvConfig) {
+      await kv.rpush(key, signal)
+      await kv.expire(key, 30)
+    } else {
+      const existing = (memoryStore.get(key) as unknown[]) || []
+      existing.push(signal)
+      memoryStore.set(key, existing)
+    }
+  },
+
+  async popRivetSignals(apiKey: string): Promise<{ id: string; action: string; data: Record<string, unknown> }[]> {
+    const key = KEYS.rivetSignals(apiKey)
+    if (hasKvConfig) {
+      const signals = await kv.lrange<{ id: string; action: string; data: Record<string, unknown> }>(key, 0, -1) || []
+      if (signals.length > 0) {
+        await kv.del(key)
+      }
+      return signals
+    } else {
+      const signals = (memoryStore.get(key) as { id: string; action: string; data: Record<string, unknown> }[]) || []
+      memoryStore.delete(key)
+      return signals
+    }
   },
 }

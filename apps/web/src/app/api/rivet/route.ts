@@ -1,40 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { authenticate } from "@/lib/auth/middleware"
-import { kv } from "@vercel/kv"
-
-const CONNECTION_TTL = 60
-const SIGNAL_TTL = 30
-
-function getConnectionKey(apiKey: string) {
-  return `rivet:conn:${apiKey}`
-}
-
-function getSignalQueueKey(apiKey: string) {
-  return `rivet:signals:${apiKey}`
-}
-
-function getAllConnectionsPattern() {
-  return "rivet:conn:*"
-}
-
-async function getActiveConnections(): Promise<{ apiKey: string; lastPing: number; userId?: string }[]> {
-  try {
-    const keys = await kv.keys(getAllConnectionsPattern())
-    const connections: { apiKey: string; lastPing: number; userId?: string }[] = []
-    
-    for (const key of keys) {
-      const data = await kv.get<{ lastPing: number; userId?: string }>(key)
-      if (data) {
-        const apiKey = key.replace("rivet:conn:", "")
-        connections.push({ apiKey, ...data })
-      }
-    }
-    
-    return connections
-  } catch {
-    return []
-  }
-}
+import { db } from "@/lib/db/kv"
 
 export async function POST(request: NextRequest) {
   try {
@@ -46,36 +12,28 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "API key required" }, { status: 401 })
       }
 
-      const connKey = getConnectionKey(apiKey)
-
       if (action === "connect") {
-        await kv.set(connKey, { lastPing: Date.now(), userId: data?.userId }, { ex: CONNECTION_TTL })
+        await db.setRivetConnection(apiKey, { lastPing: Date.now(), userId: data?.userId })
         return NextResponse.json({ success: true, message: "Connected" })
       }
 
       if (action === "ping") {
-        const conn = await kv.get(connKey)
+        const conn = await db.getRivetConnection(apiKey)
         if (conn) {
-          await kv.set(connKey, { ...conn, lastPing: Date.now() }, { ex: CONNECTION_TTL })
+          await db.setRivetConnection(apiKey, { ...conn, lastPing: Date.now() })
           return NextResponse.json({ success: true })
         }
         return NextResponse.json({ error: "Not connected" }, { status: 401 })
       }
 
       if (action === "poll") {
-        const conn = await kv.get(connKey)
+        const conn = await db.getRivetConnection(apiKey)
         if (!conn) {
           return NextResponse.json({ connected: false, signals: [] })
         }
         
-        await kv.set(connKey, { ...conn, lastPing: Date.now() }, { ex: CONNECTION_TTL })
-        
-        const signalKey = getSignalQueueKey(apiKey)
-        const signals = await kv.lrange<{ id: string; action: string; data: Record<string, unknown> }>(signalKey, 0, -1) || []
-        
-        if (signals.length > 0) {
-          await kv.del(signalKey)
-        }
+        await db.setRivetConnection(apiKey, { ...conn, lastPing: Date.now() })
+        const signals = await db.popRivetSignals(apiKey)
         
         return NextResponse.json({ 
           connected: true, 
@@ -84,7 +42,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (action === "disconnect") {
-        await kv.del(connKey)
+        await db.deleteRivetConnection(apiKey)
         return NextResponse.json({ success: true, message: "Disconnected" })
       }
 
@@ -108,7 +66,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "Missing signal action" }, { status: 400 })
         }
 
-        const connections = await getActiveConnections()
+        const connections = await db.getActiveRivetConnections()
         
         if (connections.length === 0) {
           return NextResponse.json({ 
@@ -127,9 +85,7 @@ export async function POST(request: NextRequest) {
         let sentCount = 0
         for (const conn of connections) {
           if (!targetApiKey || conn.apiKey === targetApiKey) {
-            const signalKey = getSignalQueueKey(conn.apiKey)
-            await kv.rpush(signalKey, signal)
-            await kv.expire(signalKey, SIGNAL_TTL)
+            await db.pushRivetSignal(conn.apiKey, signal)
             sentCount++
           }
         }
@@ -143,7 +99,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (action === "check_connection") {
-        const connections = await getActiveConnections()
+        const connections = await db.getActiveRivetConnections()
         const isConnected = connections.length > 0
 
         return NextResponse.json({ 
@@ -171,21 +127,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "API key required" }, { status: 401 })
   }
 
-  const connKey = getConnectionKey(apiKey)
-  const conn = await kv.get<{ lastPing: number }>(connKey)
+  const conn = await db.getRivetConnection(apiKey)
   
   if (!conn) {
     return NextResponse.json({ connected: false, signals: [] })
   }
 
-  await kv.set(connKey, { ...conn, lastPing: Date.now() }, { ex: CONNECTION_TTL })
-
-  const signalKey = getSignalQueueKey(apiKey)
-  const signals = await kv.lrange<{ id: string; action: string; data: Record<string, unknown> }>(signalKey, 0, -1) || []
-  
-  if (signals.length > 0) {
-    await kv.del(signalKey)
-  }
+  await db.setRivetConnection(apiKey, { ...conn, lastPing: Date.now() })
+  const signals = await db.popRivetSignals(apiKey)
 
   return NextResponse.json({ 
     connected: true,

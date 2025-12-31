@@ -651,7 +651,6 @@ export default function DashboardPage() {
   }
 
   async function checkPluginConnection() {
-    if (!selectedProject) return false
     try {
       const res = await fetch("/api/rivet", {
         method: "POST",
@@ -659,7 +658,7 @@ export default function DashboardPage() {
         body: JSON.stringify({
           action: "check_connection",
           source: "web",
-          data: { targetProjectId: selectedProject.id },
+          data: {},
         }),
       })
       const data = await res.json()
@@ -668,6 +667,7 @@ export default function DashboardPage() {
       return false
     }
   }
+
 
   async function handleConnect() {
     if (connectionState === "connected") {
@@ -700,11 +700,6 @@ export default function DashboardPage() {
   }
 
   async function emitSignal(action: string, payload: Record<string, unknown>): Promise<boolean> {
-    if (!selectedProject) {
-      console.warn("[Rivet] Cannot emit signal: no project selected")
-      return false
-    }
-    
     try {
       console.log("[Rivet] Sending signal:", action, payload)
       const res = await fetch("/api/rivet", {
@@ -716,7 +711,6 @@ export default function DashboardPage() {
           data: {
             signalAction: action,
             signalData: payload,
-            targetProjectId: selectedProject.id,
           },
         }),
       })
@@ -724,15 +718,16 @@ export default function DashboardPage() {
       
       if (data.success) {
         if (!data.pluginConnected) {
-          console.warn("[Rivet] Signal sent but plugin not connected")
+          console.warn("[Rivet] Signal queued but no plugin connected yet")
         }
-        return true
+        return data.pluginConnected
       }
       return false
     } catch (e) {
       console.error("[Rivet] Failed to send signal:", e)
       return false
     }
+
   }
 
   async function handleSend() {
