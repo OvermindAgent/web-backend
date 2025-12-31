@@ -1239,47 +1239,51 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
-          {connectionState === "disconnected" && (
-            <div className="flex items-center gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-yellow-500 text-sm">
-              <AlertCircle className="w-4 h-4" />
-              Roblox Studio not connected. Click "Connect Roblox" to enable script creation.
-            </div>
-          )}
+        <div className="flex-1 relative overflow-hidden flex flex-col">
+          {/* Fixed Overlay Warnings */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[100] w-full max-w-2xl px-4 flex flex-col gap-2 pointer-events-none">
+            {connectionState === "disconnected" && (
+              <div className="flex items-center gap-2 p-3 bg-yellow-500/10 backdrop-blur-md border border-yellow-500/20 rounded-xl text-yellow-500 text-sm shadow-xl animate-in fade-in slide-in-from-top-4 pointer-events-auto">
+                <AlertCircle className="w-4 h-4" />
+                <span className="flex-1">Roblox Studio not connected. Click "Connect Roblox" to enable script creation.</span>
+              </div>
+            )}
 
-          {tierWarning?.show && (
-            <div className="flex items-center justify-between gap-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm animate-fade-in">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <div>
-                  <span>{tierWarning.message}</span>
-                  {tierWarning.gracePeriodEnds && (
-                    <span className="ml-2 text-red-300">
-                      (Expires: {new Date(tierWarning.gracePeriodEnds).toLocaleDateString()})
-                    </span>
-                  )}
+            {tierWarning?.show && (
+              <div className="flex items-center justify-between gap-3 p-3 bg-red-500/10 backdrop-blur-md border border-red-500/20 rounded-xl text-red-400 text-sm shadow-xl animate-in fade-in slide-in-from-top-4 pointer-events-auto">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <div>
+                    <span>{tierWarning.message}</span>
+                    {tierWarning.gracePeriodEnds && (
+                      <span className="ml-2 text-red-300">
+                        (Expires: {new Date(tierWarning.gracePeriodEnds).toLocaleDateString()})
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <Button 
+                    size="sm" 
+                    className="bg-red-500 hover:bg-red-600 text-white h-7 px-3 rounded-lg"
+                    onClick={() => router.push("/upgrade")}
+                  >
+                    Fix Payment
+                  </Button>
+                  <button 
+                    onClick={dismissTierWarning}
+                    className="p-1 hover:bg-red-500/20 rounded-md transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <Button 
-                  size="sm" 
-                  className="bg-red-500 hover:bg-red-600 text-white h-7 px-3"
-                  onClick={() => router.push("/upgrade")}
-                >
-                  Fix Payment
-                </Button>
-                <button 
-                  onClick={dismissTierWarning}
-                  className="p-1 hover:bg-red-500/20 rounded transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
 
-          {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full text-center">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin pt-20">
+            {messages.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-full text-center">
               <div className="w-20 h-20 bg-gradient-to-br from-primary/20 to-primary/5 rounded-3xl flex items-center justify-center mb-6">
                 <Brain className="w-10 h-10 text-primary" />
               </div>
@@ -1383,8 +1387,9 @@ export default function DashboardPage() {
 
           <div ref={messagesEndRef} />
         </div>
+      </div>
 
-        <div className="border-t bg-card/50 p-4">
+      <div className="border-t bg-card/50 p-4">
           <form
             className="flex gap-3"
             onSubmit={(e) => {
