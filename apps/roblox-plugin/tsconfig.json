@@ -3,9 +3,10 @@
     "allowSyntheticDefaultImports": true,
     "downlevelIteration": true,
     "jsx": "react",
-    "jsxFactory": "Roact.createElement",
-    "jsxFragmentFactory": "Roact.createFragment",
+    "jsxFactory": "Roact.jsx",
+    "jsxFragmentFactory": "Roact.Fragment",
     "module": "commonjs",
+
     "moduleResolution": "Node",
     "noLib": true,
     "resolveJsonModule": true,

@@ -1,6 +1,8 @@
 import { ServerScriptService, ServerStorage, ReplicatedStorage, Players, Workspace, StarterPlayer, StarterGui, StarterPack, Lighting, SoundService, Chat, Teams, ReplicatedFirst, CollectionService } from "@rbxts/services"
 import { SignalAction } from "./types"
 
+const scriptEditor = game.GetService("ScriptEditorService") as ScriptEditorService
+
 type ScriptKind = "server" | "client" | "module"
 
 function determineScriptType(path: string): ScriptKind {
@@ -151,7 +153,7 @@ function applyProperties(inst: Instance, properties: Record<string, unknown>): v
 					;(inst as BasePart).Color = new Color3(r, g, b)
 				}
 			} else {
-				rawset(inst as never, key as never, value as never)
+				(inst as unknown as Record<string, unknown>)[key] = value
 			}
 		} catch (e) {
 			warn(`[Overmind] Failed to set property ${key}: ${e}`)
@@ -229,10 +231,23 @@ function handleCreateScript(data: { path: string; content: string }): void {
 
 	const newScript = createScriptInstance(scriptKind)
 	newScript.Name = baseName
-	;(newScript as ModuleScript).Source = content
 	newScript.Parent = folder
 
-	print(`[Overmind] Created script: ${path}`)
+	task.spawn(() => {
+		const success = pcall(() => {
+			scriptEditor.UpdateSourceAsync(newScript as LuaSourceContainer, () => content)
+		})
+
+		if (success[0]) {
+			print(`[Overmind] Created script: ${path}`)
+			pcall(() => {
+				scriptEditor.OpenScriptDocumentAsync(newScript as LuaSourceContainer)
+			})
+		} else {
+			;(newScript as ModuleScript).Source = content
+			print(`[Overmind] Created script (fallback): ${path}`)
+		}
+	})
 }
 
 function handleUpdateScript(data: { path: string; content: string }): void {
@@ -264,8 +279,18 @@ function handleUpdateScript(data: { path: string; content: string }): void {
 		return
 	}
 
-	;(existingScript as ModuleScript).Source = content
-	print(`[Overmind] Updated script: ${path}`)
+	task.spawn(() => {
+		const success = pcall(() => {
+			scriptEditor.UpdateSourceAsync(existingScript as LuaSourceContainer, () => content)
+		})
+
+		if (success[0]) {
+			print(`[Overmind] Updated script: ${path}`)
+		} else {
+			;(existingScript as ModuleScript).Source = content
+			print(`[Overmind] Updated script (fallback): ${path}`)
+		}
+	})
 }
 
 function handleDeleteScript(data: { path: string }): void {

@@ -142,7 +142,7 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
     if (contentRef.current) {
       setContentHeight(contentRef.current.scrollHeight)
     }
-  }, [tool.args, expanded])
+  }, [tool.args, expanded, showRaw])
   
   const gettoolicon = (name: string) => {
     if (name.includes("file") || name.includes("script")) return FileCode
@@ -285,7 +285,7 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
                 }}
               >
                 {showRaw && (
-                  <pre className="p-2 rounded bg-violet-500/5 border border-violet-500/20 text-violet-300 font-mono text-xs overflow-x-auto max-h-48 overflow-y-auto scrollbar-thin">
+                  <pre className="p-2 rounded bg-violet-500/5 border border-violet-500/20 text-violet-300 font-mono text-xs overflow-x-auto max-h-[500px] overflow-y-auto scrollbar-thin">
                     {JSON.stringify({ action: tool.name, args: tool.args }, null, 2)}
                   </pre>
                 )}

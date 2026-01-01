@@ -8,14 +8,14 @@
     "watch": "rbxtsc -w --type=model -i include"
   },
   "devDependencies": {
-    "@rbxts/compiler-types": "2.3.0-types.1",
-    "@rbxts/types": "^1.0.800",
-    "roblox-ts": "2.3.0",
-    "typescript": "5.5.4"
+    "@rbxts/compiler-types": "latest",
+    "@rbxts/types": "latest",
+    "roblox-ts": "latest",
+    "typescript": "latest"
   },
   "dependencies": {
-    "@rbxts/roact": "^1.4.4-ts.0",
-    "@rbxts/roact-hooked": "^2.6.0",
-    "@rbxts/services": "^1.5.4"
+    "@rbxts/roact": "latest",
+    "@rbxts/roact-hooked": "latest",
+    "@rbxts/services": "latest"
   }
 }

@@ -74,24 +74,31 @@ export function ChatView(props: ChatViewProps): Roact.Element {
 					<uilistlayout
 						FillDirection={Enum.FillDirection.Horizontal}
 						Padding={new UDim(0, 2)}
+						SortOrder={Enum.SortOrder.LayoutOrder}
 					/>
 
-					{(["fast", "edit", "planning"] as const).map((preset) => (
-						<textbutton
-							Key={preset}
-							Text={preset.sub(1, 1).upper() + preset.sub(2, 4)}
-							TextColor3={props.preset === preset ? DARK_THEME.text : DARK_THEME.textMuted}
-							TextSize={10}
-							Font={Enum.Font.GothamBold}
-							BackgroundColor3={props.preset === preset ? DARK_THEME.primary : DARK_THEME.background}
-							Size={new UDim2(0, 38, 1, 0)}
-							Event={{
-								MouseButton1Click: () => props.onPresetChange(preset),
-							}}
-						>
-							<uicorner CornerRadius={new UDim(0, 4)} />
-						</textbutton>
-					))}
+					{(() => {
+						const children: Record<string, Roact.Element> = {};
+						(["fast", "edit", "planning"] as const).forEach((preset, index) => {
+							children[preset] = (
+								<textbutton
+									Text={preset.sub(1, 1).upper() + preset.sub(2, 4)}
+									TextColor3={props.preset === preset ? DARK_THEME.text : DARK_THEME.textMuted}
+									TextSize={10}
+									Font={Enum.Font.GothamBold}
+									BackgroundColor3={props.preset === preset ? DARK_THEME.primary : DARK_THEME.background}
+									Size={new UDim2(0, 38, 1, 0)}
+									LayoutOrder={index}
+									Event={{
+										MouseButton1Click: () => props.onPresetChange(preset),
+									}}
+								>
+									<uicorner CornerRadius={new UDim(0, 4)} />
+								</textbutton>
+							)
+						})
+						return children as unknown as Roact.Element
+					})()}
 				</frame>
 
 				<textbutton
@@ -118,7 +125,7 @@ export function ChatView(props: ChatViewProps): Roact.Element {
 				ScrollBarImageColor3={DARK_THEME.border}
 				BorderSizePixel={0}
 			>
-				<uilistlayout Padding={new UDim(0, 6)} />
+				<uilistlayout Padding={new UDim(0, 6)} SortOrder={Enum.SortOrder.LayoutOrder} />
 				<uipadding
 					PaddingTop={new UDim(0, 6)}
 					PaddingBottom={new UDim(0, 6)}
@@ -126,44 +133,51 @@ export function ChatView(props: ChatViewProps): Roact.Element {
 					PaddingRight={new UDim(0, 8)}
 				/>
 
-				{props.messages.map((message) => (
-					<frame
-						Key={message.id}
-						BackgroundColor3={message.role === "user" ? DARK_THEME.primary : DARK_THEME.surface}
-						Size={new UDim2(0.85, 0, 0, 0)}
-						AutomaticSize={Enum.AutomaticSize.Y}
-						AnchorPoint={message.role === "user" ? new Vector2(1, 0) : new Vector2(0, 0)}
-						Position={message.role === "user" ? new UDim2(1, 0, 0, 0) : new UDim2(0, 0, 0, 0)}
-						BorderSizePixel={0}
-					>
-						<uicorner CornerRadius={new UDim(0, 8)} />
-						<uipadding
-							PaddingTop={new UDim(0, 8)}
-							PaddingBottom={new UDim(0, 8)}
-							PaddingLeft={new UDim(0, 8)}
-							PaddingRight={new UDim(0, 8)}
-						/>
+				{(() => {
+					const children: Record<string, Roact.Element> = {}
+					props.messages.forEach((message, index) => {
+						children[message.id] = (
+							<frame
+								BackgroundColor3={message.role === "user" ? DARK_THEME.primary : DARK_THEME.surface}
+								Size={new UDim2(0.85, 0, 0, 0)}
+								AutomaticSize={Enum.AutomaticSize.Y}
+								AnchorPoint={message.role === "user" ? new Vector2(1, 0) : new Vector2(0, 0)}
+								Position={message.role === "user" ? new UDim2(1, 0, 0, 0) : new UDim2(0, 0, 0, 0)}
+								BorderSizePixel={0}
+								LayoutOrder={index}
+							>
+								<uicorner CornerRadius={new UDim(0, 8)} />
+								<uipadding
+									PaddingTop={new UDim(0, 8)}
+									PaddingBottom={new UDim(0, 8)}
+									PaddingLeft={new UDim(0, 8)}
+									PaddingRight={new UDim(0, 8)}
+								/>
 
-						<textlabel
-							Text={message.role === "assistant" ? markdownToRichText(message.content) : message.content}
-							RichText={message.role === "assistant"}
-							TextColor3={DARK_THEME.text}
-							TextSize={11}
-							Font={Enum.Font.Gotham}
-							BackgroundTransparency={1}
-							Size={new UDim2(1, 0, 0, 0)}
-							AutomaticSize={Enum.AutomaticSize.Y}
-							TextWrapped
-							TextXAlignment={Enum.TextXAlignment.Left}
-						/>
-					</frame>
-				))}
+								<textlabel
+									Text={message.role === "assistant" ? markdownToRichText(message.content) : message.content}
+									RichText={message.role === "assistant"}
+									TextColor3={DARK_THEME.text}
+									TextSize={11}
+									Font={Enum.Font.Gotham}
+									BackgroundTransparency={1}
+									Size={new UDim2(1, 0, 0, 0)}
+									AutomaticSize={Enum.AutomaticSize.Y}
+									TextWrapped
+									TextXAlignment={Enum.TextXAlignment.Left}
+								/>
+							</frame>
+						)
+					})
+					return children as unknown as Roact.Element
+				})()}
 
 				{props.isLoading && (
 					<frame
 						BackgroundColor3={DARK_THEME.surface}
 						Size={new UDim2(0.5, 0, 0, 28)}
 						BorderSizePixel={0}
+						LayoutOrder={props.messages.size() + 1}
 					>
 						<uicorner CornerRadius={new UDim(0, 8)} />
 						<uipadding PaddingLeft={new UDim(0, 8)} />
