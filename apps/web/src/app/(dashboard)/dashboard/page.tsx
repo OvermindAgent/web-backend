@@ -38,7 +38,8 @@ import {
   CheckCircle2,
   XCircle,
   Crown,
-  Sparkles
+  Sparkles,
+  Code
 } from "lucide-react"
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu"
 import { InputModal, ConfirmModal } from "@/components/ui/modal"
@@ -133,6 +134,7 @@ function parseToolCalls(content: string): { text: string; tools: ToolCall[]; thi
 
 function ToolCallCard({ tool }: { tool: ToolCall }) {
   const [expanded, setExpanded] = useState(false)
+  const [showRaw, setShowRaw] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
   const [contentHeight, setContentHeight] = useState(0)
   
@@ -248,20 +250,46 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
       </div>
       
       <div 
-        className="overflow-hidden transition-all duration-300 ease-out"
-        style={{ height: expanded ? contentHeight : 0 }}
+        className="overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+        style={{ 
+          height: expanded ? contentHeight : 0,
+          opacity: expanded ? 1 : 0,
+          transform: expanded ? 'translateY(0)' : 'translateY(-8px)'
+        }}
       >
         <div ref={contentRef}>
           {Object.keys(tool.args).length > 0 && (
-            <div className="mt-3 pt-3 border-t border-border/30 space-y-2">
+            <div className="mt-3 pt-3 border-t border-border/30 space-y-3">
               {Object.entries(tool.args).map(([key, value]) => (
                 <div key={key} className="text-xs">
                   <span className="text-muted-foreground font-medium">{key}:</span>
-                  <pre className="mt-1 p-2 rounded bg-background/50 text-foreground font-mono overflow-x-auto">
-                    {value.length > 500 ? value.substring(0, 500) + "..." : value}
+                  <pre className="mt-1 p-2 rounded bg-background/50 text-foreground font-mono overflow-x-auto max-h-64 overflow-y-auto scrollbar-thin">
+                    {value}
                   </pre>
                 </div>
               ))}
+              
+              <button
+                onClick={() => setShowRaw(!showRaw)}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-violet-400 transition-colors mt-2"
+              >
+                <Code className="w-3 h-3" />
+                {showRaw ? 'Hide' : 'View'} Raw Signal
+              </button>
+              
+              <div 
+                className="overflow-hidden transition-all duration-200 ease-out"
+                style={{ 
+                  height: showRaw ? 'auto' : 0,
+                  opacity: showRaw ? 1 : 0
+                }}
+              >
+                {showRaw && (
+                  <pre className="p-2 rounded bg-violet-500/5 border border-violet-500/20 text-violet-300 font-mono text-xs overflow-x-auto max-h-48 overflow-y-auto scrollbar-thin">
+                    {JSON.stringify({ action: tool.name, args: tool.args }, null, 2)}
+                  </pre>
+                )}
+              </div>
             </div>
           )}
           
@@ -896,33 +924,28 @@ export default function DashboardPage() {
                   const action = toolCall.args.action as string
                   const payload = toolCall.args.payload as Record<string, unknown>
                   console.log("[Chat] Emitting signal to Roblox:", action)
-                  signalSent = await emitSignal(action, { data: payload })
+                  signalSent = await emitSignal(action, payload)
                   if (!signalSent) errorMsg = "Failed to send signal"
                 } else if (toolCall.name === "create_file") {
                   console.log("[Chat] Emitting create_script signal")
                   signalSent = await emitSignal("create_script", { 
-                    data: { 
-                      path: toolCall.args.path, 
-                      content: toolCall.args.content 
-                    } 
+                    path: toolCall.args.path, 
+                    content: toolCall.args.content 
                   })
                   if (!signalSent) errorMsg = "Failed to create file"
                 } else if (toolCall.name === "update_file") {
                   console.log("[Chat] Emitting update_script signal")
                   signalSent = await emitSignal("update_script", { 
-                    data: { 
-                      path: toolCall.args.path, 
-                      content: toolCall.args.content 
-                    } 
+                    path: toolCall.args.path, 
+                    content: toolCall.args.content 
                   })
                   if (!signalSent) errorMsg = "Failed to update file"
                 } else if (toolCall.name === "delete_file") {
                   console.log("[Chat] Emitting delete_file signal")
                   signalSent = await emitSignal("delete_file", { 
-                    data: { 
-                      path: toolCall.args.path 
-                    } 
+                    path: toolCall.args.path 
                   })
+
                   if (!signalSent) errorMsg = "Failed to delete file"
                 } else {
                   signalSent = true
