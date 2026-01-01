@@ -19,10 +19,16 @@ import {
   Lock,
   Eye,
   EyeOff,
-  CheckCircle
+  CheckCircle,
+  Brain,
+  ChevronDown,
+  Crown,
+  Sparkles
 } from "lucide-react"
 import { cn, formatDate } from "@/lib/utils"
 import { ConfirmModal } from "@/components/ui/modal"
+import { isFeatureLocked } from "@/lib/billing/locks"
+import { type Tier } from "@/lib/billing/tiers"
 
 interface ApiKey {
   id: string
@@ -40,7 +46,13 @@ interface UserProfile {
   createdAt: number
 }
 
-type Tab = "account" | "security" | "api-keys"
+interface Provider {
+  id: string
+  name: string
+  modelCount: number
+}
+
+type Tab = "account" | "security" | "api-keys" | "ai"
 
 export default function SettingsPage() {
   const router = useRouter()
@@ -74,12 +86,26 @@ export default function SettingsPage() {
   const [deleteModal, setDeleteModal] = useState<{ open: boolean; key: ApiKey | null }>({ open: false, key: null })
   const [copyingKey, setCopyingKey] = useState<string | null>(null)
 
+  const [providers, setProviders] = useState<Provider[]>([])
+  const [selectedProvider, setSelectedProvider] = useState("")
+  const [defaultProvider, setDefaultProvider] = useState("")
+  const [providersLoading, setProvidersLoading] = useState(true)
+  const [providerSaving, setProviderSaving] = useState(false)
+  const [providerSuccess, setProviderSuccess] = useState("")
+  const [showProviderDropdown, setShowProviderDropdown] = useState(false)
+  const [userTier, setUserTier] = useState<Tier>("free")
+  const [tierLoaded, setTierLoaded] = useState(false)
+
+  const isAiProviderLocked = tierLoaded && isFeatureLocked("ai_provider", userTier)
+
   useEffect(() => {
     fetchUser()
     fetchKeys()
+    fetchProviders()
+    fetchTier()
     
     const tab = new URLSearchParams(window.location.search).get("tab") as Tab
-    if (tab && ["account", "security", "api-keys"].includes(tab)) {
+    if (tab && ["account", "security", "api-keys", "ai"].includes(tab)) {
       setActiveTab(tab)
     }
   }, [])
@@ -109,6 +135,52 @@ export default function SettingsPage() {
       setKeysError("Failed to fetch API keys")
     } finally {
       setKeysLoading(false)
+    }
+  }
+
+  async function fetchProviders() {
+    try {
+      const res = await fetch("/api/providers")
+      const data = await res.json()
+      setProviders(data.providers || [])
+      setDefaultProvider(data.default || "chat.gpt-chatbot.ru")
+      
+      const userRes = await fetch("/api/user")
+      const userData = await userRes.json()
+      setSelectedProvider(userData.user?.preferredProvider || data.default || "chat.gpt-chatbot.ru")
+    } catch {
+      setProviders([])
+    } finally {
+      setProvidersLoading(false)
+    }
+  }
+
+  async function handleSaveProvider() {
+    setProviderSaving(true)
+    try {
+      await fetch("/api/user", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preferredProvider: selectedProvider }),
+      })
+      setProviderSuccess("Provider saved!")
+      setTimeout(() => setProviderSuccess(""), 2000)
+    } catch {}
+    finally {
+      setProviderSaving(false)
+    }
+  }
+
+  async function fetchTier() {
+    try {
+      const res = await fetch("/api/billing")
+      const data = await res.json()
+      if (data.tier) {
+        setUserTier(data.tier)
+      }
+    } catch {}
+    finally {
+      setTierLoaded(true)
     }
   }
 
@@ -259,9 +331,10 @@ export default function SettingsPage() {
   }
 
   const tabs = [
-    { id: "account" as Tab, label: "Account", icon: <User className="w-4 h-4" /> },
-    { id: "security" as Tab, label: "Security", icon: <Lock className="w-4 h-4" /> },
-    { id: "api-keys" as Tab, label: "API Keys", icon: <Key className="w-4 h-4" /> },
+    { id: "account" as Tab, label: "Account", icon: <User className="w-4 h-4" />, isPro: false },
+    { id: "security" as Tab, label: "Security", icon: <Lock className="w-4 h-4" />, isPro: false },
+    { id: "api-keys" as Tab, label: "API Keys", icon: <Key className="w-4 h-4" />, isPro: false },
+    { id: "ai" as Tab, label: "AI", icon: <Brain className="w-4 h-4" />, isPro: true },
   ]
 
   return (
@@ -302,7 +375,12 @@ export default function SettingsPage() {
                   )}
                 >
                   {tab.icon}
-                  {tab.label}
+                  <span className="flex-1 text-left">{tab.label}</span>
+                  {tab.isPro && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-gradient-to-r from-purple-600 to-pink-600 text-white">
+                      PRO
+                    </span>
+                  )}
                 </button>
               ))}
             </nav>
@@ -617,6 +695,130 @@ export default function SettingsPage() {
                           </div>
                         ))}
                       </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {activeTab === "ai" && (
+              <div className="space-y-6">
+                <Card className="relative">
+                  {isAiProviderLocked && (
+                    <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+                      <div className="flex flex-col items-center text-center p-8 max-w-sm">
+                        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center mb-4">
+                          <Lock className="w-6 h-6 text-white" />
+                        </div>
+                        <h3 className="text-lg font-semibold mb-1">Pro Feature</h3>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          Switch AI providers with a Pro subscription
+                        </p>
+                        <Button 
+                          onClick={() => router.push("/upgrade")}
+                          size="sm"
+                          className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500"
+                        >
+                          Upgrade
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      AI Provider
+                      <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-gradient-to-r from-purple-600 to-pink-600 text-white">
+                        PRO
+                      </span>
+                    </CardTitle>
+                    <CardDescription>Choose your preferred AI provider for chat completions</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {providerSuccess && (
+                      <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-500 text-sm flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4" />
+                        {providerSuccess}
+                      </div>
+                    )}
+                    
+                    {providersLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : (
+                      <>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Provider</label>
+                          <div className="relative">
+                            <button
+                              onClick={() => setShowProviderDropdown(!showProviderDropdown)}
+                              className="w-full flex items-center justify-between p-3 rounded-lg border bg-background hover:bg-accent/50 transition-colors text-left"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                                  <Brain className="w-4 h-4 text-primary" />
+                                </div>
+                                <div>
+                                  <p className="font-medium">
+                                    {providers.find(p => p.id === selectedProvider)?.name || "Select Provider"}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {providers.find(p => p.id === selectedProvider)?.modelCount || 0} models available
+                                  </p>
+                                </div>
+                              </div>
+                              <ChevronDown className={cn("w-4 h-4 transition-transform", showProviderDropdown && "rotate-180")} />
+                            </button>
+                            
+                            {showProviderDropdown && (
+                              <div className="absolute top-full left-0 right-0 mt-2 p-2 rounded-lg border bg-card shadow-xl z-50 animate-in fade-in slide-in-from-top-2">
+                                {providers.map((provider) => (
+                                  <button
+                                    key={provider.id}
+                                    onClick={() => {
+                                      setSelectedProvider(provider.id)
+                                      setShowProviderDropdown(false)
+                                    }}
+                                    className={cn(
+                                      "w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors",
+                                      selectedProvider === provider.id ? "bg-primary/10" : "hover:bg-accent/50"
+                                    )}
+                                  >
+                                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                                      <Brain className="w-4 h-4 text-primary" />
+                                    </div>
+                                    <div className="flex-1">
+                                      <p className="font-medium">{provider.name}</p>
+                                      <p className="text-xs text-muted-foreground">{provider.modelCount} models</p>
+                                    </div>
+                                    {selectedProvider === provider.id && (
+                                      <Check className="w-4 h-4 text-primary" />
+                                    )}
+                                    {provider.id === defaultProvider && (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">Default</span>
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <Button 
+                          onClick={handleSaveProvider} 
+                          disabled={providerSaving}
+                          className="w-full sm:w-auto"
+                        >
+                          {providerSaving ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                              Saving...
+                            </>
+                          ) : (
+                            "Save Provider"
+                          )}
+                        </Button>
+                      </>
                     )}
                   </CardContent>
                 </Card>

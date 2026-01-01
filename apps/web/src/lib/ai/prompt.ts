@@ -89,13 +89,23 @@ function generateToolDocs(userTier?: Tier): string {
   return docs
 }
 
-function generateTierContext(userTier: Tier): string {
+function generateTierContext(userTier: Tier, userInfo?: { displayName?: string; creditsUsed?: number; creditsTotal?: number }): string {
   const lockedTools = getLockedToolsForTier(userTier)
   const lockedPresets = getLockedPresetsForTier(userTier)
   const lockedModels = getLockedModels(userTier)
   const availableModels = getAvailableModels(userTier)
   
-  let context = "## ACCESS CONTEXT\n\n"
+  let context = "## USER CONTEXT\n\n"
+  
+  context += `**Current User Tier:** ${userTier.toUpperCase()}\n`
+  if (userInfo?.displayName) {
+    context += `**Display Name:** ${userInfo.displayName}\n`
+  }
+  if (userInfo?.creditsTotal !== undefined) {
+    const available = (userInfo.creditsTotal || 0) - (userInfo.creditsUsed || 0)
+    context += `**Credits:** ${available}/${userInfo.creditsTotal} available today\n`
+  }
+  context += "\n"
   
   context += "### Available Models\n"
   for (const model of availableModels) {
@@ -124,13 +134,19 @@ export interface BuildPromptOptions {
   preset: Preset
   projectContext?: string
   userTier?: Tier
+  userInfo?: { displayName?: string; creditsUsed?: number; creditsTotal?: number }
 }
 
-export function buildSystemPrompt(preset: Preset, projectContext?: string, userTier?: Tier): string {
+export function buildSystemPrompt(
+  preset: Preset, 
+  projectContext?: string, 
+  userTier?: Tier,
+  userInfo?: { displayName?: string; creditsUsed?: number; creditsTotal?: number }
+): string {
   const basePrompt = loadInternalPrompt()
   const presetConfig = getPreset(preset)
   const toolDocs = generateToolDocs(userTier)
-  const tierContext = userTier ? generateTierContext(userTier) : ""
+  const tierContext = userTier ? generateTierContext(userTier, userInfo) : ""
   
   let systemPrompt = ""
   

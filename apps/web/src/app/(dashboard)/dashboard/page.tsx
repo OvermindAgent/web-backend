@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { ChatInput, type UploadedFile } from "@/components/ui/chat-input"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { 
@@ -39,7 +40,15 @@ import {
   XCircle,
   Crown,
   Sparkles,
-  Code
+  Code,
+  Search,
+  Copy,
+  RefreshCw,
+  ThumbsUp,
+  ThumbsDown,
+  Pin,
+  PinOff,
+  Menu
 } from "lucide-react"
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu"
 import { InputModal, ConfirmModal } from "@/components/ui/modal"
@@ -78,6 +87,7 @@ interface Chat {
   messages: Message[]
   messageCount: number
   manuallyRenamed: boolean
+  pinned: boolean
   createdAt: number
   updatedAt: number
 }
@@ -311,10 +321,16 @@ function ReasoningSection({ reasoning }: { reasoning: string }) {
     <div className="mb-2">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        className={cn(
+          "flex items-center gap-1.5 text-xs px-2 py-1 rounded-full transition-all duration-300",
+          isOpen 
+            ? "text-amber-400 bg-amber-500/10" 
+            : "text-muted-foreground hover:text-amber-400 hover:bg-amber-500/5"
+        )}
       >
+        <Lightbulb className="w-3 h-3" />
+        <span>{isOpen ? "Hide reasoning" : "Show reasoning"}</span>
         <ChevronRight className={cn("w-3 h-3 transition-transform duration-200", isOpen && "rotate-90")} />
-        Show reasoning
       </button>
       <div
         className={cn(
@@ -322,9 +338,139 @@ function ReasoningSection({ reasoning }: { reasoning: string }) {
           isOpen ? "max-h-[5000px] opacity-100 mt-2" : "max-h-0 opacity-0"
         )}
       >
-        <p className="text-xs text-muted-foreground whitespace-pre-wrap bg-muted/30 rounded-lg p-2 leading-relaxed">
+        <p className="text-xs text-muted-foreground whitespace-pre-wrap bg-amber-500/5 border border-amber-500/10 rounded-lg p-3 leading-relaxed">
           {reasoning}
         </p>
+      </div>
+    </div>
+  )
+}
+
+function MessageActionBar({ 
+  content, 
+  onRegenerate,
+  isLatest = false
+}: { 
+  content: string
+  onRegenerate?: () => void
+  isLatest?: boolean
+}) {
+  const [copied, setCopied] = useState(false)
+  const [feedback, setFeedback] = useState<"up" | "down" | null>(null)
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(content)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className={cn(
+      "flex items-center gap-1 ml-11 mt-1 transition-all duration-300",
+      isLatest 
+        ? "opacity-100 animate-fade-in" 
+        : "opacity-0 group-hover:opacity-100"
+    )}>
+      <button
+        onClick={handleCopy}
+        className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-foreground hover:bg-white/5 transition-all duration-200 hover:scale-110 active:scale-95"
+        title="Copy"
+      >
+        {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+      </button>
+      
+      <button
+        onClick={onRegenerate}
+        className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-foreground hover:bg-white/5 transition-all duration-200 hover:scale-110 active:scale-95 hover:rotate-180"
+        title="Regenerate"
+      >
+        <RefreshCw className="w-3.5 h-3.5" />
+      </button>
+
+      <div className="w-px h-3 bg-border/20 mx-0.5" />
+      
+      <button
+        onClick={() => setFeedback(feedback === "up" ? null : "up")}
+        className={cn(
+          "p-1.5 rounded-lg transition-all duration-200 hover:scale-110 active:scale-95",
+          feedback === "up" 
+            ? "text-green-500 bg-green-500/10" 
+            : "text-muted-foreground/60 hover:text-foreground hover:bg-white/5"
+        )}
+        title="Good response"
+      >
+        <ThumbsUp className="w-3.5 h-3.5" />
+      </button>
+      
+      <button
+        onClick={() => setFeedback(feedback === "down" ? null : "down")}
+        className={cn(
+          "p-1.5 rounded-lg transition-all duration-200 hover:scale-110 active:scale-95",
+          feedback === "down" 
+            ? "text-red-500 bg-red-500/10" 
+            : "text-muted-foreground/60 hover:text-foreground hover:bg-white/5"
+        )}
+        title="Bad response"
+      >
+        <ThumbsDown className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  )
+}
+
+function CollapsibleUserMessage({ content }: { content: string }) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [needsCollapse, setNeedsCollapse] = useState(false)
+  const [fullHeight, setFullHeight] = useState(0)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const COLLAPSED_HEIGHT = 120
+
+  useEffect(() => {
+    if (contentRef.current) {
+      const height = contentRef.current.scrollHeight
+      setFullHeight(height)
+      setNeedsCollapse(height > COLLAPSED_HEIGHT + 40)
+    }
+  }, [content])
+
+  return (
+    <div 
+      className="max-w-[90%] sm:max-w-[80%] lg:max-w-[70%] rounded-2xl bg-primary text-primary-foreground cursor-pointer select-none"
+      onClick={() => needsCollapse && setIsExpanded(!isExpanded)}
+    >
+      <div
+        ref={contentRef}
+        className="relative overflow-hidden transition-[max-height] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
+        style={{ 
+          maxHeight: isExpanded ? fullHeight : needsCollapse ? COLLAPSED_HEIGHT : fullHeight 
+        }}
+      >
+        <div className="p-4">
+          <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+            {content}
+          </p>
+        </div>
+        
+        {!isExpanded && needsCollapse && (
+          <div className="absolute inset-x-0 bottom-0 h-16 rounded-b-2xl overflow-hidden pointer-events-none">
+            <div className="absolute inset-0 bg-gradient-to-t from-primary via-primary/80 to-transparent" />
+            <div className="absolute inset-x-0 bottom-2 flex justify-center">
+              <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/20 backdrop-blur-sm text-[10px] font-medium text-white/80">
+                <ChevronDown className="w-3 h-3" />
+                <span>more</span>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {isExpanded && needsCollapse && (
+          <div className="absolute inset-x-0 bottom-0 h-8 flex justify-center items-end pb-1 pointer-events-none">
+            <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/20 backdrop-blur-sm text-[10px] font-medium text-white/60">
+              <ChevronDown className="w-3 h-3 rotate-180" />
+              <span>less</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -381,11 +527,23 @@ export default function DashboardPage() {
   const [selectedModel, setSelectedModel] = useState("chatgpt-4o-latest")
   const [showModelsMenu, setShowModelsMenu] = useState(false)
   
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false)
+  const [canvasEnabled, setCanvasEnabled] = useState(false)
+  const [mentorEnabled, setMentorEnabled] = useState(false)
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
+  
   const [tierWarning, setTierWarning] = useState<{ show: boolean; message: string; gracePeriodEnds?: number } | null>(null)
   const [credits, setCredits] = useState<{ used: number; total: number; available: number } | null>(null)
   const [currentTier, setCurrentTier] = useState<"free" | "pro" | "studio">("free")
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const MODELS = getAllModels()
+  
+  const sortedChats = [...chats].sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1
+    if (!a.pinned && b.pinned) return 1
+    return b.updatedAt - a.updatedAt
+  })
   
   async function fetchBillingInfo() {
     try {
@@ -608,6 +766,28 @@ export default function DashboardPage() {
     } catch {}
   }
 
+  async function togglePinChat(chatId: string) {
+    const chat = chats.find(c => c.id === chatId)
+    if (!chat) return
+    
+    try {
+      const res = await fetch("/api/chats", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: chatId, pinned: !chat.pinned }),
+      })
+      const data = await res.json()
+      if (data.chat) {
+        const updatedchats = chats.map((c) => (c.id === chatId ? data.chat : c))
+        setChats(updatedchats)
+        savechatstocache(updatedchats)
+        if (selectedChat?.id === chatId) {
+          setSelectedChat(data.chat)
+        }
+      }
+    } catch {}
+  }
+
   async function generateChatName(chatMessages: Message[]): Promise<string> {
     try {
       const context = chatMessages.slice(-5).map(m => `${m.role}: ${m.content.slice(0, 100)}`).join("\n")
@@ -786,7 +966,7 @@ export default function DashboardPage() {
   }
 
   async function handleSend() {
-    if (!input.trim() || loading || !selectedProject) return
+    if ((!input.trim() && uploadedFiles.length === 0) || loading || !selectedProject) return
 
     let currentChat = selectedChat
     if (!currentChat) {
@@ -805,14 +985,34 @@ export default function DashboardPage() {
       }
     }
 
+    let messageContent = input.trim()
+    
+    if (uploadedFiles.length > 0) {
+      const fileContents: string[] = []
+      
+      for (const file of uploadedFiles) {
+        if (file.type.startsWith("image/")) {
+          fileContents.push(`\n\n[IMAGE: ${file.name}]\n${file.data}`)
+        } else if (file.type === "application/pdf") {
+          fileContents.push(`\n\n[PDF: ${file.name}]\n(PDF content - user uploaded a PDF file)`)
+        } else {
+          const ext = file.name.split(".").pop() || "txt"
+          fileContents.push(`\n\n[FILE: ${file.name}]\n\`\`\`${ext}\n${file.data}\n\`\`\``)
+        }
+      }
+      
+      messageContent = messageContent + fileContents.join("")
+    }
+
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
-      content: input.trim(),
+      content: messageContent,
     }
 
     setMessages((prev) => [...prev, userMessage])
     setInput("")
+    setUploadedFiles([])
     setLoading(true)
 
 
@@ -852,7 +1052,6 @@ export default function DashboardPage() {
           content: m.content,
         })),
         preset,
-        provider: MODELS.find((m) => m.id === selectedModel)?.provider,
         model: selectedModel,
         projectContext: connectionContext + projectContext,
         projectId: selectedProject?.id,
@@ -1007,13 +1206,21 @@ export default function DashboardPage() {
 
       if (currentChat && assistantContent) {
         const chatToSave = currentChat
+        const { tools: savedTools } = parseToolCalls(assistantContent)
+        const finalToolCalls = savedTools.map(t => ({ ...t, status: "success" as ToolStatus }))
+        
         try {
           const res = await fetch("/api/chats", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               id: chatToSave.id,
-              message: { role: "assistant", content: assistantContent, reasoning: assistantReasoning },
+              message: { 
+                role: "assistant", 
+                content: assistantContent, 
+                reasoning: assistantReasoning,
+                toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined
+              },
             }),
           })
           const data = await res.json()
@@ -1066,8 +1273,18 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="flex h-screen bg-background">
-      <aside className="w-64 border-r bg-card/50 p-4 flex flex-col">
+    <div className="flex h-screen bg-background overflow-hidden">
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden animate-fade-in"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      
+      <aside className={cn(
+        "fixed md:relative z-50 md:z-auto w-72 md:w-64 h-full border-r bg-card/95 md:bg-card/50 backdrop-blur-xl md:backdrop-blur-none p-4 flex flex-col transition-transform duration-300",
+        sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+      )}>
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary/60 rounded-xl flex items-center justify-center">
             <Brain className="w-5 h-5 text-white" />
@@ -1137,10 +1354,10 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-1">
-            {chats.length === 0 ? (
+            {sortedChats.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-4">No chats yet</p>
             ) : (
-              chats.map((chat) => (
+              sortedChats.map((chat) => (
                 <button
                   key={chat.id}
                   className={cn(
@@ -1148,10 +1365,14 @@ export default function DashboardPage() {
                     "hover:bg-accent/50",
                     selectedChat?.id === chat.id && "bg-accent"
                   )}
-                  onClick={() => selectChat(chat)}
+                  onClick={() => { selectChat(chat); setSidebarOpen(false); }}
                   onContextMenu={(e) => handleChatContextMenu(e, chat)}
                 >
-                  <MessageSquare className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
+                  {chat.pinned ? (
+                    <Pin className="w-4 h-4 flex-shrink-0 text-primary" />
+                  ) : (
+                    <MessageSquare className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
+                  )}
                   <span className="flex-1 truncate">{chat.name}</span>
                 </button>
               ))
@@ -1188,51 +1409,72 @@ export default function DashboardPage() {
             </Button>
           </div>
 
-          <div className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-gradient-to-r from-violet-500/10 via-purple-500/10 to-fuchsia-500/10 border border-violet-500/20">
-            <div className="flex items-center gap-2.5">
+
+          <div className="relative rounded-xl bg-gradient-to-br from-violet-500/10 via-purple-500/5 to-fuchsia-500/10 backdrop-blur-md border border-white/10">
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-violet-600/20 via-transparent to-transparent opacity-60 rounded-xl" />
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,_var(--tw-gradient-stops))] from-fuchsia-600/15 via-transparent to-transparent opacity-40 rounded-xl" />
+            
+            <div className="relative flex items-center gap-2 px-2.5 py-2">
               <div className={cn(
-                "px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider",
-                currentTier === "free" && "bg-violet-500/20 text-violet-300 border border-violet-400/30",
-                currentTier === "pro" && "bg-gradient-to-r from-violet-500/30 to-fuchsia-500/30 text-violet-300 border border-violet-400/40",
-                currentTier === "studio" && "bg-gradient-to-r from-amber-500/30 to-orange-500/30 text-amber-300 border border-amber-400/40"
+                "px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex-shrink-0",
+                currentTier === "free" && "bg-gradient-to-r from-violet-500/30 to-purple-500/30 text-violet-200",
+                currentTier === "pro" && "bg-gradient-to-r from-violet-500/40 to-fuchsia-500/40 text-violet-100",
+                currentTier === "studio" && "bg-gradient-to-r from-amber-500/40 to-orange-500/40 text-amber-100"
               )}>
                 {currentTier}
               </div>
+              
               {credits && (
-                <div className="flex items-center gap-1.5 text-xs">
-                  <div className="p-1 rounded-md bg-violet-500/20">
-                    <Zap className="w-3 h-3 text-violet-400" />
+                <>
+                  <div className="h-3 w-px bg-gradient-to-b from-transparent via-white/20 to-transparent flex-shrink-0" />
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/5 border border-white/10 flex-shrink-0">
+                    <div className="relative">
+                      <div className="absolute inset-0 bg-violet-500/50 blur-md rounded-full" />
+                      <div className="relative p-0.5 rounded bg-gradient-to-br from-violet-500/30 to-purple-500/30">
+                        <Zap className="w-3 h-3 text-violet-300" />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-0.5 text-[11px] font-semibold whitespace-nowrap">
+                      <span className="text-white">{credits.available}</span>
+                      <span className="text-white/30">/</span>
+                      <span className="text-white/50">{credits.total}</span>
+                    </div>
                   </div>
-                  <span className="font-bold text-foreground">{credits.available}</span>
-                  <span className="text-muted-foreground/70">/</span>
-                  <span className="text-muted-foreground">{credits.total}</span>
-                </div>
+                </>
               )}
+              
+              <div className="flex-1 min-w-0" />
+              
+              <button
+                onClick={handleLogout}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-500/15 transition-all hover:scale-110 active:scale-95 border border-transparent hover:border-red-500/20 flex-shrink-0"
+                title="Logout"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
             </div>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-violet-500/10 transition-colors" 
-              onClick={handleLogout}
-            >
-              <LogOut className="w-4 h-4" />
-            </Button>
           </div>
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col">
-        <header className="border-b bg-card/50 p-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className="text-lg font-semibold">Chat</h1>
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <header className="border-b bg-card/50 p-2 sm:p-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <button
+              className="p-2 rounded-lg hover:bg-accent md:hidden"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <h1 className="text-base sm:text-lg font-semibold">Chat</h1>
           </div>
 
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 sm:gap-3 flex-wrap">
             <Button
               variant={connectionState === "connected" ? "default" : "outline"}
               size="sm"
-              className={cn("gap-2", connectionState === "connected" && "bg-green-600 hover:bg-green-700")}
+              className={cn("gap-1.5 sm:gap-2 px-2 sm:px-3", connectionState === "connected" && "bg-green-600 hover:bg-green-700")}
               onClick={handleConnect}
               disabled={connectionState === "connecting"}
             >
@@ -1243,17 +1485,20 @@ export default function DashboardPage() {
               ) : (
                 <Plug className="w-4 h-4" />
               )}
-              {connectionState === "connected" ? "Connected" : connectionState === "connecting" ? "Connecting..." : "Connect Roblox"}
+              <span className="hidden sm:inline">
+                {connectionState === "connected" ? "Connected" : connectionState === "connecting" ? "Connecting..." : "Connect Roblox"}
+              </span>
             </Button>
 
             <div className="relative">
               <Button
                 variant="outline"
-                className="gap-2"
+                size="sm"
+                className="gap-1.5 sm:gap-2 px-2 sm:px-3"
                 onClick={() => showPresets ? closePresets() : setShowPresets(true)}
               >
                 {PRESETS.find((p) => p.id === preset)?.icon}
-                {PRESETS.find((p) => p.id === preset)?.name}
+                <span className="hidden sm:inline">{PRESETS.find((p) => p.id === preset)?.name}</span>
                 <ChevronDown className="w-4 h-4" />
               </Button>
 
@@ -1361,7 +1606,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {messages.map((message) => {
+          {messages.map((message, messageIndex) => {
             const parsed = message.role === "assistant" 
               ? parseToolCalls(message.content)
               : { text: message.content, tools: [], thinking: undefined }
@@ -1372,67 +1617,82 @@ export default function DashboardPage() {
               : parsed.tools
             const displayReasoning = parsed.thinking || message.reasoning
 
+            if (message.role === "user") {
+              return (
+                <div
+                  key={message.id}
+                  className="flex gap-3 animate-fade-in justify-end"
+                >
+                  <CollapsibleUserMessage content={text} />
+                </div>
+              )
+            }
+
             return (
               <div
                 key={message.id}
-                className={cn(
-                  "flex gap-3 animate-fade-in",
-                  message.role === "user" && "justify-end"
-                )}
+                className="group flex flex-col animate-fade-in"
               >
-                {message.role === "assistant" && (
+                <div className="flex gap-3">
                   <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary/60 rounded-lg flex items-center justify-center flex-shrink-0">
                     <Brain className="w-4 h-4 text-white" />
                   </div>
-                )}
-                
-                <div
-                  className={cn(
-                    "max-w-[70%] rounded-2xl p-4 font-sans",
-                    message.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-card border"
-                  )}
-                >
-                  {displayReasoning && <ReasoningSection reasoning={displayReasoning} />}
                   
-                  {tools.length > 0 && (
-                    <div className="mb-2">
-                      {tools.map((tool, idx) => (
-                        <ToolCallCard key={idx} tool={tool} />
-                      ))}
-                    </div>
-                  )}
-                  
-                  {text && (
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
-                      <ReactMarkdown 
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          code({ className, children, ...props }) {
-                            const match = /language-(\w+)/.exec(className || "")
-                            const isblock = String(children).includes("\n") || match
-                            
-                            if (isblock) {
-                              return (
-                                <CodeBlock language={match?.[1]}>
-                                  {String(children).replace(/\n$/, "")}
-                                </CodeBlock>
-                              )
+                  <div className="max-w-[95%] sm:max-w-[85%] lg:max-w-[70%] rounded-2xl p-3 sm:p-4 font-sans bg-card border overflow-hidden">
+                    {displayReasoning && <ReasoningSection reasoning={displayReasoning} />}
+                    
+                    {tools.length > 0 && (
+                      <div className="mb-2">
+                        {tools.map((tool, idx) => (
+                          <ToolCallCard key={idx} tool={tool} />
+                        ))}
+                      </div>
+                    )}
+                    
+                    {text && (
+                      <div className="prose prose-sm dark:prose-invert max-w-none break-words overflow-hidden">
+                        <ReactMarkdown 
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            code({ className, children, ...props }) {
+                              const match = /language-(\w+)/.exec(className || "")
+                              const isblock = String(children).includes("\n") || match
+                              
+                              if (isblock) {
+                                return (
+                                  <CodeBlock language={match?.[1]}>
+                                    {String(children).replace(/\n$/, "")}
+                                  </CodeBlock>
+                                )
+                              }
+                              
+                              return <InlineCode {...props}>{children}</InlineCode>
+                            },
+                            pre({ children }) {
+                              return <>{children}</>
                             }
-                            
-                            return <InlineCode {...props}>{children}</InlineCode>
-                          },
-                          pre({ children }) {
-                            return <>{children}</>
-                          }
-                        }}
-                      >
-                        {text}
-                      </ReactMarkdown>
-                    </div>
-                  )}
+                          }}
+                        >
+                          {text}
+                        </ReactMarkdown>
+                      </div>
+                    )}
+                  </div>
                 </div>
+                
+                <MessageActionBar 
+                  content={message.content} 
+                  isLatest={!loading && messageIndex === messages.length - 1 && message.role === "assistant"}
+                  onRegenerate={() => {
+                    const userMsgIndex = messageIndex - 1
+                    if (userMsgIndex >= 0 && messages[userMsgIndex]?.role === "user") {
+                      const userContent = messages[userMsgIndex].content
+                      setMessages(prev => prev.slice(0, userMsgIndex))
+                      setInput(userContent)
+                      setTimeout(() => handleSend(), 100)
+                    }
+                  }}
+                />
               </div>
             )
           })}
@@ -1456,33 +1716,78 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="border-t bg-card/50 p-4">
-          <form
-            className="flex gap-3"
-            onSubmit={(e) => {
-              e.preventDefault()
-              handleSend()
-            }}
+      <div className="border-t bg-card/50 p-4 pt-3 space-y-4">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all hover:scale-105 active:scale-95",
+              webSearchEnabled
+                ? "bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/30"
+                : "bg-white/[0.03] text-muted-foreground hover:text-foreground hover:bg-white/[0.08]"
+            )}
           >
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask Overmind anything..."
-              className="flex-1 bg-background"
-              disabled={loading}
-            />
-            <Button type="submit" disabled={loading || !input.trim()}>
-              <Send className="w-4 h-4" />
-            </Button>
+            <Search className="w-3.5 h-3.5" />
+            <span>Web Search</span>
+          </button>
+          
+          <button
+            onClick={() => setCanvasEnabled(!canvasEnabled)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all hover:scale-105 active:scale-95",
+              canvasEnabled
+                ? "bg-green-500/20 text-green-400 ring-1 ring-green-500/30"
+                : "bg-white/[0.03] text-muted-foreground hover:text-foreground hover:bg-white/[0.08]"
+            )}
+          >
+            <FileCode className="w-3.5 h-3.5" />
+            <span>Canvas</span>
+          </button>
+          
+          <button
+            onClick={() => setMentorEnabled(!mentorEnabled)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all hover:scale-105 active:scale-95",
+              mentorEnabled
+                ? "bg-purple-500/20 text-purple-400 ring-1 ring-purple-500/30"
+                : "bg-white/[0.03] text-muted-foreground hover:text-foreground hover:bg-white/[0.08]"
+            )}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Academy</span>
+          </button>
+        </div>
+
+        <form
+          className="flex items-start gap-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            handleSend()
+          }}
+        >
+          <ChatInput
+            value={input}
+            onChange={setInput}
+            onSend={handleSend}
+            placeholder="Ask Overmind anything..."
+            loading={loading}
+            className="flex-1"
+            files={uploadedFiles}
+            onFilesChange={setUploadedFiles}
+            settingsButton={
             
             <div className="relative">
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 size="icon"
                 onClick={() => showContextMenu ? closeContextMenu() : setShowContextMenu(true)}
+                className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5"
               >
-                <MoreVertical className="w-4 h-4" />
+                <Settings className={cn("w-4 h-4 transition-transform duration-300", showContextMenu && "rotate-90")} />
+                {(thinkingMode || highTemperature || creativeMode || debugMode) && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-violet-500" />
+                )}
               </Button>
 
               {showContextMenu && (
@@ -1683,6 +1988,8 @@ export default function DashboardPage() {
                 </Card>
               )}
             </div>
+            }
+          />
           </form>
         </div>
       </main>
@@ -1693,17 +2000,15 @@ export default function DashboardPage() {
         position={chatContextMenu.position}
       >
         <ContextMenuItem
-          icon={<Trash2 className="w-4 h-4" />}
-          variant="destructive"
+          icon={chatContextMenu.chat?.pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
           onClick={() => {
             if (chatContextMenu.chat) {
-              setDeleteModal({ open: true, chat: chatContextMenu.chat })
+              togglePinChat(chatContextMenu.chat.id)
             }
           }}
         >
-          Delete
+          {chatContextMenu.chat?.pinned ? "Unpin" : "Pin"}
         </ContextMenuItem>
-        <ContextMenuSeparator />
         <ContextMenuItem
           icon={<Pencil className="w-4 h-4" />}
           onClick={() => {
@@ -1713,6 +2018,18 @@ export default function DashboardPage() {
           }}
         >
           Rename
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          icon={<Trash2 className="w-4 h-4" />}
+          variant="destructive"
+          onClick={() => {
+            if (chatContextMenu.chat) {
+              setDeleteModal({ open: true, chat: chatContextMenu.chat })
+            }
+          }}
+        >
+          Delete
         </ContextMenuItem>
       </ContextMenu>
 

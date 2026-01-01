@@ -4,14 +4,31 @@ import { db } from "@/lib/db/kv"
 
 async function getAuthenticatedUser() {
   if (process.env.NODE_ENV === "development") {
-    return {
-      id: "dev-user-001",
-      email: "dev@overmind.local",
-      passwordHash: "",
-      displayName: "Dev User",
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+    let user = await db.getUser("dev-user-001")
+    if (!user) {
+      user = {
+        id: "dev-user-001",
+        email: "dev@overmind.local",
+        passwordHash: "",
+        displayName: "Dev User",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        tier: "free",
+        billingCycle: null,
+        subscriptionExpiresAt: null,
+        autoRenew: false,
+        gracePeriodEndsAt: null,
+        paymentFailedAt: null,
+        creditsUsedToday: 0,
+        creditsLastReset: Date.now(),
+        requestsThisMinute: 0,
+        minuteStartTime: Date.now(),
+        dismissedTierWarning: false,
+        preferredProvider: "chat.gpt-chatbot.ru",
+      }
+      await db.createUser(user)
     }
+    return user
   }
   return await getCurrentUser()
 }
@@ -29,6 +46,7 @@ export async function GET() {
         email: user.email,
         displayName: user.displayName,
         createdAt: user.createdAt,
+        preferredProvider: user.preferredProvider,
       },
     })
   } catch {
@@ -43,9 +61,9 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { email, displayName } = await request.json()
+    const { email, displayName, preferredProvider } = await request.json()
 
-    const updates: { email?: string; displayName?: string } = {}
+    const updates: { email?: string; displayName?: string; preferredProvider?: string } = {}
 
     if (email && email !== user.email) {
       const emailLower = email.toLowerCase()
@@ -60,6 +78,10 @@ export async function PATCH(request: NextRequest) {
       updates.displayName = displayName
     }
 
+    if (preferredProvider !== undefined) {
+      updates.preferredProvider = preferredProvider
+    }
+
     if (Object.keys(updates).length > 0) {
       await db.updateUser(user.id, updates)
     }
@@ -72,6 +94,7 @@ export async function PATCH(request: NextRequest) {
         email: updatedUser?.email,
         displayName: updatedUser?.displayName,
         createdAt: updatedUser?.createdAt,
+        preferredProvider: updatedUser?.preferredProvider,
       },
     })
   } catch {

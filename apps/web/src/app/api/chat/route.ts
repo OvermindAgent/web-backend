@@ -4,7 +4,7 @@ import { chat, streamChat, type ChatMessage } from "@/lib/ai/router"
 import { parseToolCalls, executeTool, hasToolCall, extractTextContent } from "@/lib/ai/executor"
 import type { Preset } from "@/lib/ai/presets"
 import { decryptchat, encryptchat } from "@/lib/crypto"
-import { calculateCreditCost, canUseCredits, checkRateLimit, isSameDay } from "@/lib/billing/credits"
+import { calculateCreditCost, canUseCredits, checkRateLimit, isSameDay, getDailyCredits } from "@/lib/billing/credits"
 import { db } from "@/lib/db/kv"
 
 export async function POST(request: NextRequest) {
@@ -117,15 +117,24 @@ export async function POST(request: NextRequest) {
       console.log(`[Credits] WARNING: No user found, skipping credit deduction`)
     }
     
+    const effectiveProvider = provider || user?.preferredProvider || undefined
+    
     if (stream) {
       const encoder = new TextEncoder()
+      
+      const userInfo = user ? {
+        displayName: user.displayName,
+        creditsUsed: user.creditsUsedToday,
+        creditsTotal: getDailyCredits(userTier),
+      } : undefined
+      
       const readable = new ReadableStream({
         async start(controller) {
           try {
             let fullContent = ""
             let fullReasoning = ""
             
-            for await (const chunk of streamChat({ messages, preset, projectContext, provider, model, userTier })) {
+            for await (const chunk of streamChat({ messages, preset, projectContext, provider: effectiveProvider, model, userTier, userInfo })) {
               if (chunk.done) {
                 if (hasToolCall(fullContent)) {
                   const toolCalls = parseToolCalls(fullContent)
@@ -172,7 +181,13 @@ export async function POST(request: NextRequest) {
       })
     }
     
-    const response = await chat({ messages, preset, projectContext, provider, model, userTier })
+    const userInfoNonStream = user ? {
+      displayName: user.displayName,
+      creditsUsed: user.creditsUsedToday,
+      creditsTotal: getDailyCredits(userTier),
+    } : undefined
+    
+    const response = await chat({ messages, preset, projectContext, provider: effectiveProvider, model, userTier, userInfo: userInfoNonStream })
     
     let toolResults: { call: unknown; result: unknown }[] = []
     if (hasToolCall(response.content)) {

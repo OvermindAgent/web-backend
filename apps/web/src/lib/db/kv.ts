@@ -21,6 +21,7 @@ export interface User {
   requestsThisMinute: number
   minuteStartTime: number
   dismissedTierWarning: boolean
+  preferredProvider?: string
 }
 
 export interface Session {
@@ -68,6 +69,7 @@ export interface ChatMessage {
   role: "user" | "assistant"
   content: string
   reasoning?: string
+  toolCalls?: { name: string; args: Record<string, string>; status: string; result?: string; error?: string }[]
   createdAt: number
 }
 
@@ -79,6 +81,7 @@ export interface Chat {
   messages: ChatMessage[]
   messageCount: number
   manuallyRenamed: boolean
+  pinned: boolean
   createdAt: number
   updatedAt: number
 }

@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
       messages: [],
       messageCount: 0,
       manuallyRenamed: false,
+      pinned: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }
@@ -87,7 +88,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
     
-    const { id, name, manuallyRenamed, message } = await request.json()
+    const { id, name, manuallyRenamed, pinned, message } = await request.json()
     
     if (!id) {
       return NextResponse.json({ error: "Chat ID is required" }, { status: 400 })
@@ -99,6 +100,7 @@ export async function PATCH(request: NextRequest) {
         role: message.role,
         content: message.content,
         reasoning: message.reasoning,
+        toolCalls: message.toolCalls,
         createdAt: Date.now(),
       }
       
@@ -109,6 +111,7 @@ export async function PATCH(request: NextRequest) {
     const updates: Partial<Chat> = {}
     if (name !== undefined) updates.name = name
     if (manuallyRenamed !== undefined) updates.manuallyRenamed = manuallyRenamed
+    if (pinned !== undefined) updates.pinned = pinned
     
     await db.updateChat(id, updates)
     const chat = await db.getChat(id)

@@ -1,6 +1,8 @@
 import { type Tier, hasMinimumTier } from "./tiers"
 
-export const LOCKED_FEATURES: Record<string, Tier> = {}
+export const LOCKED_FEATURES: Record<string, Tier> = {
+  ai_provider: "pro",
+}
 
 export const LOCKED_TOOLS: Record<string, Tier> = {}
 

@@ -5,9 +5,29 @@ export async function POST(request: NextRequest) {
   try {
     const { email, password } = await request.json()
     
-    if (!email || !password) {
+    if (!email) {
       return NextResponse.json(
-        { error: "Email and password are required" },
+        { error: "Email is required" },
+        { status: 400 }
+      )
+    }
+
+    if (process.env.NODE_ENV === "development" && email === "dev@overmind.local") {
+      const devSession = await createSession("dev-user-001")
+      await setSessionCookie(devSession.id)
+      
+      return NextResponse.json({
+        user: {
+          id: "dev-user-001",
+          email: "dev@overmind.local",
+          displayName: "Dev User",
+        },
+      })
+    }
+    
+    if (!password) {
+      return NextResponse.json(
+        { error: "Password is required" },
         { status: 400 }
       )
     }

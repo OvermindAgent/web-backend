@@ -1,6 +1,8 @@
 import { type Tier, getDailyCredits, TIERS } from "./tiers"
 import { getModelCost } from "./models"
 
+export { getDailyCredits }
+
 export interface CreditStatus {
   available: number
   used: number

@@ -17,6 +17,7 @@ export interface ChatRequest {
   provider?: string
   model?: string
   userTier?: Tier
+  userInfo?: { displayName?: string; creditsUsed?: number; creditsTotal?: number }
 }
 
 export interface ChatResponse {
@@ -39,7 +40,7 @@ export interface StreamChunk {
 
 export async function chat(request: ChatRequest): Promise<ChatResponse> {
   const preset = request.preset || "fast"
-  const systemPrompt = buildSystemPrompt(preset, request.projectContext, request.userTier)
+  const systemPrompt = buildSystemPrompt(preset, request.projectContext, request.userTier, request.userInfo)
   const presetConfig = getPreset(preset)
   
   const provider = request.provider || presetConfig.provider || AI_CONFIG.defaultProvider
@@ -51,6 +52,7 @@ export async function chat(request: ChatRequest): Promise<ChatResponse> {
   ]
   
   console.log(`[Router] Using provider: ${provider}, model: ${model}, tier: ${request.userTier || "none"}`)
+  console.log(`[Router] System Prompt Length: ${systemPrompt.length} chars`)
   
   const response = await fetch(`${AI_CONFIG.baseUrl}/api/chat`, {
     method: "POST",
@@ -83,7 +85,7 @@ export async function chat(request: ChatRequest): Promise<ChatResponse> {
 
 export async function* streamChat(request: ChatRequest): AsyncGenerator<StreamChunk> {
   const preset = request.preset || "fast"
-  const systemPrompt = buildSystemPrompt(preset, request.projectContext, request.userTier)
+  const systemPrompt = buildSystemPrompt(preset, request.projectContext, request.userTier, request.userInfo)
   const presetConfig = getPreset(preset)
   
   const provider = request.provider || presetConfig.provider || AI_CONFIG.defaultProvider
@@ -95,6 +97,7 @@ export async function* streamChat(request: ChatRequest): AsyncGenerator<StreamCh
   ]
   
   console.log(`[Router Stream] Using provider: ${provider}, model: ${model}, tier: ${request.userTier || "none"}`)
+  console.log(`[Router Stream] System Prompt Length: ${systemPrompt.length} chars`)
   
   const response = await fetch(`${AI_CONFIG.baseUrl}/api/chat`, {
     method: "POST",
