@@ -58,11 +58,21 @@ import remarkGfm from "remark-gfm"
 import { CodeBlock, InlineCode } from "@/components/ui/code-block"
 import { encryptdata, decryptdata } from "@/lib/crypto.browser"
 import { getAllModels } from "@/lib/billing/models"
+import { WebSearchCard } from "@/components/ui/web-search-card"
+import { WebOutlineCard } from "@/components/ui/web-outline-card"
 
 type Preset = "fast" | "edit" | "planning" | "unrestricted"
 type ConnectionState = "disconnected" | "connecting" | "connected"
 
 type ToolStatus = "pending" | "executing" | "success" | "error"
+
+const CUSTOM_TOOLS = ["web_search", "web_outline"]
+
+interface SearchResult {
+  title: string
+  snippet: string
+  url: string
+}
 
 interface ToolCall {
   name: string
@@ -70,6 +80,8 @@ interface ToolCall {
   status: ToolStatus
   result?: string
   error?: string
+  searchResults?: SearchResult[]
+  outlineResult?: { url: string; title: string; content: string; wordCount: number }
 }
 
 interface Message {
@@ -78,6 +90,7 @@ interface Message {
   content: string
   reasoning?: string
   toolCalls?: ToolCall[]
+  isThinking?: boolean
 }
 
 interface Chat {
@@ -112,13 +125,11 @@ function parseToolCalls(content: string): { text: string; tools: ToolCall[]; thi
   const tools: ToolCall[] = []
   let thinking = ""
   
-  // Extract thinking
   let thinkMatch: RegExpExecArray | null
   while ((thinkMatch = thinkRegex.exec(content)) !== null) {
     thinking += thinkMatch[1].trim() + "\n"
   }
   
-  // Extract tools
   let match: RegExpExecArray | null
   while ((match = toolRegex.exec(content)) !== null) {
     const [, toolName, argsContent] = match
@@ -134,25 +145,132 @@ function parseToolCalls(content: string): { text: string; tools: ToolCall[]; thi
     tools.push({ name: toolName, args, status: "pending" })
   }
   
+  const incompleteToolMatch = content.match(/<tool\s+name="([^"]+)">([\s\S]*)$/)
+  if (incompleteToolMatch && !content.includes("</tool>")) {
+    const [, toolName, partialContent] = incompleteToolMatch
+    const args: Record<string, string> = {}
+    
+    const completeArgRegex = /<arg\s+name="([^"]+)">([\s\S]*?)<\/arg>/g
+    let argMatch: RegExpExecArray | null
+    while ((argMatch = completeArgRegex.exec(partialContent)) !== null) {
+      args[argMatch[1]] = argMatch[2].trim()
+    }
+    
+    const incompleteArgMatch = partialContent.match(/<arg\s+name="([^"]+)">([\s\S]*)$/)
+    if (incompleteArgMatch) {
+      args[incompleteArgMatch[1]] = incompleteArgMatch[2]
+    }
+    
+    tools.push({ name: toolName, args, status: "executing" })
+  }
+  
   let text = content
     .replace(toolRegex, "")
     .replace(thinkRegex, "")
+    .replace(/<tool\s+name="[^"]*">[\s\S]*$/, "")
     .trim()
 
   return { text, tools, thinking: thinking.trim() || undefined }
 }
 
+type ContentSegment = 
+  | { type: "text"; content: string }
+  | { type: "tool"; tool: ToolCall }
+
+function parseContentSegments(content: string, toolStatuses?: Record<string, ToolCall>): { segments: ContentSegment[]; thinking?: string } {
+  const thinkRegex = /<think>([\s\S]*?)<\/think>/g
+  let thinking = ""
+  
+  let thinkMatch: RegExpExecArray | null
+  while ((thinkMatch = thinkRegex.exec(content)) !== null) {
+    thinking += thinkMatch[1].trim() + "\n"
+  }
+  
+  const cleanContent = content.replace(thinkRegex, "")
+  
+  const segments: ContentSegment[] = []
+  const toolRegex = /<tool\s+name="([^"]+)">([\s\S]*?)<\/tool>/g
+  const argRegex = /<arg\s+name="([^"]+)">([\s\S]*?)<\/arg>/g
+  
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  
+  while ((match = toolRegex.exec(cleanContent)) !== null) {
+    const textBefore = cleanContent.slice(lastIndex, match.index).trim()
+    if (textBefore) {
+      segments.push({ type: "text", content: textBefore })
+    }
+    
+    const [, toolName, argsContent] = match
+    const args: Record<string, string> = {}
+    
+    let argMatch: RegExpExecArray | null
+    const argRegexCopy = new RegExp(argRegex.source, "g")
+    while ((argMatch = argRegexCopy.exec(argsContent)) !== null) {
+      args[argMatch[1]] = argMatch[2].trim()
+    }
+    
+    const existingTool = toolStatuses?.[toolName]
+    segments.push({ 
+      type: "tool", 
+      tool: existingTool || { name: toolName, args, status: "pending" }
+    })
+    
+    lastIndex = match.index + match[0].length
+  }
+  
+  const incompleteMatch = cleanContent.match(/<tool\s+name="([^"]+)">([\s\S]*)$/)
+  if (incompleteMatch) {
+    const textBefore = cleanContent.slice(lastIndex, cleanContent.indexOf(incompleteMatch[0])).trim()
+    if (textBefore) {
+      segments.push({ type: "text", content: textBefore })
+    }
+    
+    const [, toolName, partialContent] = incompleteMatch
+    const args: Record<string, string> = {}
+    
+    const completeArgRegex = /<arg\s+name="([^"]+)">([\s\S]*?)<\/arg>/g
+    let argMatch: RegExpExecArray | null
+    while ((argMatch = completeArgRegex.exec(partialContent)) !== null) {
+      args[argMatch[1]] = argMatch[2].trim()
+    }
+    
+    const incompleteArgMatch = partialContent.match(/<arg\s+name="([^"]+)">([\s\S]*)$/)
+    if (incompleteArgMatch) {
+      args[incompleteArgMatch[1]] = incompleteArgMatch[2]
+    }
+    
+    segments.push({ type: "tool", tool: { name: toolName, args, status: "executing" } })
+  } else {
+    const remainingText = cleanContent.slice(lastIndex).trim()
+    if (remainingText) {
+      segments.push({ type: "text", content: remainingText })
+    }
+  }
+  
+  return { segments, thinking: thinking.trim() || undefined }
+}
+
 function ToolCallCard({ tool }: { tool: ToolCall }) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(tool.status === "executing")
   const [showRaw, setShowRaw] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
   const [contentHeight, setContentHeight] = useState(0)
   
   useEffect(() => {
+    if (tool.status === "executing") {
+      setExpanded(true)
+    }
+  }, [tool.status])
+  
+  useEffect(() => {
     if (contentRef.current) {
       setContentHeight(contentRef.current.scrollHeight)
+      if (expanded && tool.status === "executing") {
+        contentRef.current.scrollTop = contentRef.current.scrollHeight
+      }
     }
-  }, [tool.args, expanded, showRaw])
+  }, [tool.args, expanded, showRaw, tool.status])
   
   const gettoolicon = (name: string) => {
     if (name.includes("file") || name.includes("script")) return FileCode
@@ -270,14 +388,17 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
         <div ref={contentRef}>
           {Object.keys(tool.args).length > 0 && (
             <div className="mt-3 pt-3 border-t border-border/30 space-y-3">
-              {Object.entries(tool.args).map(([key, value]) => (
-                <div key={key} className="text-xs">
-                  <span className="text-muted-foreground font-medium">{key}:</span>
-                  <pre className="mt-1 p-2 rounded bg-background/50 text-foreground font-mono overflow-x-auto max-h-64 overflow-y-auto scrollbar-thin">
-                    {value}
-                  </pre>
-                </div>
-              ))}
+              {Object.entries(tool.args).map(([key, value]) => {
+                const cleanValue = value.replace(/<\/?arg[^>]*>/g, "").replace(/<\/?tool[^>]*>/g, "")
+                return (
+                  <div key={key} className="text-xs">
+                    <span className="text-muted-foreground font-medium">{key}:</span>
+                    <pre className="mt-1 p-2 rounded bg-background/50 text-foreground font-mono overflow-x-auto max-h-64 overflow-y-auto scrollbar-thin">
+                      {cleanValue}
+                    </pre>
+                  </div>
+                )
+              })}
               
               <button
                 onClick={() => setShowRaw(!showRaw)}
@@ -314,8 +435,17 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
   )
 }
 
-function ReasoningSection({ reasoning }: { reasoning: string }) {
+function ReasoningSection({ reasoning, isStreaming = false }: { reasoning: string; isStreaming?: boolean }) {
   const [isOpen, setIsOpen] = useState(false)
+  const wasStreamingRef = React.useRef(false)
+  
+  React.useEffect(() => {
+    if (isStreaming && !wasStreamingRef.current) {
+      wasStreamingRef.current = true
+    }
+  }, [isStreaming])
+
+  const hasContent = reasoning.trim().length > 0
 
   return (
     <div className="mb-2">
@@ -328,8 +458,19 @@ function ReasoningSection({ reasoning }: { reasoning: string }) {
             : "text-muted-foreground hover:text-amber-400 hover:bg-amber-500/5"
         )}
       >
-        <Lightbulb className="w-3 h-3" />
-        <span>{isOpen ? "Hide reasoning" : "Show reasoning"}</span>
+        <Lightbulb className={cn("w-3 h-3", isStreaming && "animate-pulse")} />
+        {isStreaming && !hasContent ? (
+          <span className="flex items-center gap-1">
+            Reasoning
+            <span className="inline-flex">
+              <span className="animate-bounce" style={{ animationDelay: "0ms" }}>.</span>
+              <span className="animate-bounce" style={{ animationDelay: "150ms" }}>.</span>
+              <span className="animate-bounce" style={{ animationDelay: "300ms" }}>.</span>
+            </span>
+          </span>
+        ) : (
+          <span>{isOpen ? "Hide reasoning" : "Show reasoning"}</span>
+        )}
         <ChevronRight className={cn("w-3 h-3 transition-transform duration-200", isOpen && "rotate-90")} />
       </button>
       <div
@@ -338,10 +479,42 @@ function ReasoningSection({ reasoning }: { reasoning: string }) {
           isOpen ? "max-h-[5000px] opacity-100 mt-2" : "max-h-0 opacity-0"
         )}
       >
-        <p className="text-xs text-muted-foreground whitespace-pre-wrap bg-amber-500/5 border border-amber-500/10 rounded-lg p-3 leading-relaxed">
-          {reasoning}
-        </p>
+        {hasContent ? (
+          <p className="text-xs text-muted-foreground whitespace-pre-wrap bg-amber-500/5 border border-amber-500/10 rounded-lg p-3 leading-relaxed">
+            {reasoning}
+          </p>
+        ) : isStreaming ? (
+          <div className="bg-amber-500/5 border border-amber-500/10 rounded-lg p-3">
+            <div className="flex items-center gap-2 text-xs text-amber-400/70">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>Thinking through the problem...</span>
+            </div>
+          </div>
+        ) : null}
       </div>
+    </div>
+  )
+}
+
+function ThinkingIndicator({ stage }: { stage: "reasoning" | "processing" | "continuing" }) {
+  const stageConfig = {
+    reasoning: { icon: Lightbulb, text: "Reasoning", color: "text-amber-400 bg-amber-500/10" },
+    processing: { icon: Loader2, text: "Processing tools", color: "text-blue-400 bg-blue-500/10" },
+    continuing: { icon: Brain, text: "Continuing", color: "text-purple-400 bg-purple-500/10" },
+  }
+  
+  const config = stageConfig[stage]
+  const Icon = config.icon
+
+  return (
+    <div className={cn("inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full", config.color)}>
+      <Icon className={cn("w-3 h-3", stage !== "reasoning" && "animate-spin")} />
+      <span>{config.text}</span>
+      <span className="inline-flex">
+        <span className="animate-bounce" style={{ animationDelay: "0ms" }}>.</span>
+        <span className="animate-bounce" style={{ animationDelay: "150ms" }}>.</span>
+        <span className="animate-bounce" style={{ animationDelay: "300ms" }}>.</span>
+      </span>
     </div>
   )
 }
@@ -1015,7 +1188,6 @@ export default function DashboardPage() {
     setUploadedFiles([])
     setLoading(true)
 
-
     if (currentChat) {
       const chatToUpdate = currentChat
       const res = await fetch("/api/chats", {
@@ -1077,12 +1249,18 @@ export default function DashboardPage() {
       let assistantContent = ""
       let assistantReasoning = ""
       const assistantId = crypto.randomUUID()
-      const toolStatuses: Record<string, { status: ToolStatus; result?: string; error?: string }> = {}
+      const toolStatuses: Record<string, { 
+        status: ToolStatus
+        result?: string
+        error?: string
+        searchResults?: SearchResult[]
+        outlineResult?: { url: string; title: string; content: string; wordCount: number }
+      }> = {}
       let streamBuffer = ""
 
       setMessages((prev) => [
         ...prev,
-        { id: assistantId, role: "assistant", content: "", reasoning: "" },
+        { id: assistantId, role: "assistant", content: "", reasoning: "", isThinking: true },
       ])
       setLoading(false)
 
@@ -1111,49 +1289,81 @@ export default function DashboardPage() {
                 assistantReasoning += parsed.content
               } else if (parsed.type === "tool_result") {
                 const toolCall = parsed.call as { name: string; args: Record<string, unknown> }
-                console.log("[Chat] Tool result received:", toolCall.name)
+                const toolResult = parsed.result as { success: boolean; result?: unknown; error?: string }
+                console.log("[Chat] Tool result received:", toolCall.name, toolResult)
                 
-                let signalSent = false
-                let errorMsg = ""
+                const isCustomTool = CUSTOM_TOOLS.includes(toolCall.name)
                 
-                if (connectionState !== "connected") {
-                  errorMsg = "Not connected to Roblox Studio"
-                  console.log("[Chat] Tool error: not connected")
-                } else if (toolCall.name === "emit_signal") {
-                  const action = toolCall.args.action as string
-                  const payload = toolCall.args.payload as Record<string, unknown>
-                  console.log("[Chat] Emitting signal to Roblox:", action)
-                  signalSent = await emitSignal(action, payload)
-                  if (!signalSent) errorMsg = "Failed to send signal"
-                } else if (toolCall.name === "create_file") {
-                  console.log("[Chat] Emitting create_script signal")
-                  signalSent = await emitSignal("create_script", { 
-                    path: toolCall.args.path, 
-                    content: toolCall.args.content 
-                  })
-                  if (!signalSent) errorMsg = "Failed to create file"
-                } else if (toolCall.name === "update_file") {
-                  console.log("[Chat] Emitting update_script signal")
-                  signalSent = await emitSignal("update_script", { 
-                    path: toolCall.args.path, 
-                    content: toolCall.args.content 
-                  })
-                  if (!signalSent) errorMsg = "Failed to update file"
-                } else if (toolCall.name === "delete_file") {
-                  console.log("[Chat] Emitting delete_file signal")
-                  signalSent = await emitSignal("delete_file", { 
-                    path: toolCall.args.path 
-                  })
-
-                  if (!signalSent) errorMsg = "Failed to delete file"
+                if (isCustomTool) {
+                  if (toolResult.success) {
+                    const result = toolResult.result as Record<string, unknown>
+                    
+                    if (toolCall.name === "web_search") {
+                      toolStatuses[toolCall.name] = {
+                        status: "success",
+                        result: `Found ${(result.results as SearchResult[])?.length || 0} results`,
+                        searchResults: result.results as SearchResult[]
+                      }
+                    } else if (toolCall.name === "web_outline") {
+                      toolStatuses[toolCall.name] = {
+                        status: "success",
+                        result: `Read ${result.wordCount || 0} words`,
+                        outlineResult: {
+                          url: result.url as string,
+                          title: result.title as string,
+                          content: result.content as string,
+                          wordCount: result.wordCount as number
+                        }
+                      }
+                    }
+                  } else {
+                    toolStatuses[toolCall.name] = {
+                      status: "error",
+                      error: toolResult.error || "Custom tool failed"
+                    }
+                  }
                 } else {
-                  signalSent = true
-                }
-                
-                toolStatuses[toolCall.name] = {
-                  status: signalSent ? "success" : "error",
-                  result: signalSent ? "Signal sent to Roblox Studio" : undefined,
-                  error: errorMsg || undefined
+                  let signalSent = false
+                  let errorMsg = ""
+                  
+                  if (connectionState !== "connected") {
+                    errorMsg = "Not connected to Roblox Studio"
+                    console.log("[Chat] Tool error: not connected")
+                  } else if (toolCall.name === "emit_signal") {
+                    const action = toolCall.args.action as string
+                    const payload = toolCall.args.payload as Record<string, unknown>
+                    console.log("[Chat] Emitting signal to Roblox:", action)
+                    signalSent = await emitSignal(action, payload)
+                    if (!signalSent) errorMsg = "Failed to send signal"
+                  } else if (toolCall.name === "create_file") {
+                    console.log("[Chat] Emitting create_script signal")
+                    signalSent = await emitSignal("create_script", { 
+                      path: toolCall.args.path, 
+                      content: toolCall.args.content 
+                    })
+                    if (!signalSent) errorMsg = "Failed to create file"
+                  } else if (toolCall.name === "update_file") {
+                    console.log("[Chat] Emitting update_script signal")
+                    signalSent = await emitSignal("update_script", { 
+                      path: toolCall.args.path, 
+                      content: toolCall.args.content 
+                    })
+                    if (!signalSent) errorMsg = "Failed to update file"
+                  } else if (toolCall.name === "delete_file") {
+                    console.log("[Chat] Emitting delete_file signal")
+                    signalSent = await emitSignal("delete_file", { 
+                      path: toolCall.args.path 
+                    })
+                    if (!signalSent) errorMsg = "Failed to delete file"
+                  } else {
+                    signalSent = true
+                  }
+                  
+                  toolStatuses[toolCall.name] = {
+                    status: signalSent ? "success" : "error",
+                    result: signalSent ? "Signal sent to Roblox Studio" : undefined,
+                    error: errorMsg || undefined
+                  }
                 }
               }
 
@@ -1164,7 +1374,13 @@ export default function DashboardPage() {
               }
               
               const mergedTools: ToolCall[] = parsedTools.map((pt) => {
-                const statusInfo = toolStatuses[pt.name]
+                const statusInfo = toolStatuses[pt.name] as { 
+                  status: ToolStatus
+                  result?: string
+                  error?: string
+                  searchResults?: SearchResult[]
+                  outlineResult?: { url: string; title: string; content: string; wordCount: number }
+                } | undefined
                 const finalStatus = statusInfo ? statusInfo.status : "executing"
                 console.log("[Chat] Tool", pt.name, "-> status:", finalStatus)
                 
@@ -1174,7 +1390,9 @@ export default function DashboardPage() {
                     args: pt.args,
                     status: statusInfo.status,
                     result: statusInfo.result,
-                    error: statusInfo.error
+                    error: statusInfo.error,
+                    searchResults: statusInfo.searchResults,
+                    outlineResult: statusInfo.outlineResult
                   }
                 }
                 return {
@@ -1191,7 +1409,8 @@ export default function DashboardPage() {
                         ...m, 
                         content: assistantContent, 
                         reasoning: thinking || assistantReasoning, 
-                        toolCalls: mergedTools 
+                        toolCalls: mergedTools,
+                        isThinking: !assistantContent && (!!assistantReasoning || mergedTools.length > 0)
                       }
                     : m
                 )
@@ -1607,14 +1826,18 @@ export default function DashboardPage() {
           )}
 
           {messages.map((message, messageIndex) => {
-            const parsed = message.role === "assistant" 
-              ? parseToolCalls(message.content)
-              : { text: message.content, tools: [], thinking: undefined }
+            const toolStatusMap: Record<string, ToolCall> = {}
+            if (message.toolCalls) {
+              message.toolCalls.forEach(tc => {
+                toolStatusMap[tc.name] = tc
+              })
+            }
             
-            const text = parsed.text
-            const tools = message.toolCalls && message.toolCalls.length > 0 
-              ? message.toolCalls 
-              : parsed.tools
+            const parsed = message.role === "assistant" 
+              ? parseContentSegments(message.content, toolStatusMap)
+              : { segments: [{ type: "text" as const, content: message.content }], thinking: undefined }
+            
+            const allTools = parsed.segments.filter((s): s is { type: "tool"; tool: ToolCall } => s.type === "tool").map(s => s.tool)
             const displayReasoning = parsed.thinking || message.reasoning
 
             if (message.role === "user") {
@@ -1623,7 +1846,7 @@ export default function DashboardPage() {
                   key={message.id}
                   className="flex gap-3 animate-fade-in justify-end"
                 >
-                  <CollapsibleUserMessage content={text} />
+                  <CollapsibleUserMessage content={message.content} />
                 </div>
               )
             }
@@ -1639,42 +1862,92 @@ export default function DashboardPage() {
                   </div>
                   
                   <div className="max-w-[95%] sm:max-w-[85%] lg:max-w-[70%] rounded-2xl p-3 sm:p-4 font-sans bg-card border overflow-hidden">
-                    {displayReasoning && <ReasoningSection reasoning={displayReasoning} />}
-                    
-                    {tools.length > 0 && (
-                      <div className="mb-2">
-                        {tools.map((tool, idx) => (
-                          <ToolCallCard key={idx} tool={tool} />
-                        ))}
-                      </div>
+                    {(displayReasoning || message.isThinking) && (
+                      <ReasoningSection 
+                        reasoning={displayReasoning || ""} 
+                        isStreaming={message.isThinking || (messageIndex === messages.length - 1 && !parsed.segments.some(s => s.type === "text") && !!displayReasoning)}
+                      />
                     )}
                     
-                    {text && (
-                      <div className="prose prose-sm dark:prose-invert max-w-none break-words overflow-hidden">
-                        <ReactMarkdown 
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            code({ className, children, ...props }) {
-                              const match = /language-(\w+)/.exec(className || "")
-                              const isblock = String(children).includes("\n") || match
-                              
-                              if (isblock) {
-                                return (
-                                  <CodeBlock language={match?.[1]}>
-                                    {String(children).replace(/\n$/, "")}
-                                  </CodeBlock>
-                                )
-                              }
-                              
-                              return <InlineCode {...props}>{children}</InlineCode>
-                            },
-                            pre({ children }) {
-                              return <>{children}</>
-                            }
-                          }}
-                        >
-                          {text}
-                        </ReactMarkdown>
+                    {message.isThinking && !displayReasoning && !parsed.segments.some(s => s.type === "text") && allTools.length === 0 && (
+                      <ThinkingIndicator stage="continuing" />
+                    )}
+                    
+                    {parsed.segments.map((segment, segIdx) => {
+                      if (segment.type === "text" && segment.content) {
+                        return (
+                          <div key={`text-${segIdx}`} className="prose prose-sm dark:prose-invert max-w-none break-words overflow-hidden">
+                            <ReactMarkdown 
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                code({ className, children, ...props }) {
+                                  const match = /language-(\w+)/.exec(className || "")
+                                  const isblock = String(children).includes("\n") || match
+                                  
+                                  if (isblock) {
+                                    return (
+                                      <CodeBlock language={match?.[1]}>
+                                        {String(children).replace(/\n$/, "")}
+                                      </CodeBlock>
+                                    )
+                                  }
+                                  
+                                  return <InlineCode {...props}>{children}</InlineCode>
+                                },
+                                pre({ children }) {
+                                  return <>{children}</>
+                                }
+                              }}
+                            >
+                              {segment.content}
+                            </ReactMarkdown>
+                          </div>
+                        )
+                      }
+                      
+                      if (segment.type === "tool") {
+                        const tool = segment.tool
+                        if (tool.name === "web_search") {
+                          return (
+                            <WebSearchCard
+                              key={`tool-${segIdx}`}
+                              query={tool.args.query || ""}
+                              results={tool.searchResults}
+                              status={tool.status === "executing" ? "searching" : tool.status === "success" ? "searched" : "error"}
+                              error={tool.error}
+                            />
+                          )
+                        }
+                        if (tool.name === "web_outline") {
+                          return (
+                            <WebOutlineCard
+                              key={`tool-${segIdx}`}
+                              url={tool.args.url || ""}
+                              title={tool.outlineResult?.title}
+                              content={tool.outlineResult?.content}
+                              wordCount={tool.outlineResult?.wordCount}
+                              status={tool.status === "executing" ? "reading" : tool.status === "success" ? "read" : "error"}
+                              error={tool.error}
+                            />
+                          )
+                        }
+                        return <ToolCallCard key={`tool-${segIdx}`} tool={tool} />
+                      }
+                      
+                      return null
+                    })}
+                    
+                    {/* Thinking indicator - always at bottom of latest message when processing */}
+                    {messageIndex === messages.length - 1 && (message.isThinking || (!parsed.segments.some(s => s.type === "text") && (displayReasoning || allTools.length > 0))) && (
+                      <div className="flex items-center gap-2 mt-3 animate-fade-in">
+                        <div className="relative flex items-center justify-center w-4 h-4">
+                          <span className="absolute inline-flex h-full w-full rounded-full bg-primary/40 animate-ping" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+                        </div>
+                        <span className="text-sm text-muted-foreground">
+                          {allTools.some(t => t.status === "success") ? "Continuing" : "Thinking"}
+                          <span className="inline-block w-6 text-left animate-ellipsis" />
+                        </span>
                       </div>
                     )}
                   </div>

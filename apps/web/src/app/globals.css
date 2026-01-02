@@ -103,3 +103,15 @@
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
+
+@keyframes ellipsis {
+  0% { content: '.'; }
+  33% { content: '..'; }
+  66% { content: '...'; }
+  100% { content: '.'; }
+}
+
+.animate-ellipsis::after {
+  content: '.';
+  animation: ellipsis 1.5s infinite;
+}

@@ -56,8 +56,44 @@ All logic, tools, tasks, and rules are owned by the backend.
 - You MAY call multiple tools in one response`
 }
 
+function generateCustomToolsContext(): string {
+  return `## CUSTOM TOOLS (No Roblox Connection Required)
+
+**web_search** - Search the web for current information
+- Returns up to 6 results with title, snippet, and URL
+- Use when you need information not in your training data
+
+**web_outline** - Extract text content from a webpage
+- Returns the page title, text content, and word count  
+- Use after web_search to read full page content`
+}
+
+function generateToolExecutionContext(): string {
+  return `## TOOL EXECUTION FLOW (CRITICAL)
+
+When you call a tool:
+1. Your response ends after the tool call
+2. The system executes the tool
+3. You receive the result in a follow-up message
+4. THEN you can comment on success/failure
+
+**IMPORTANT:** Do NOT write success messages, confirmations, or summaries about tool actions in the same response as the tool call. You don't know if it succeeded yet. The system will tell you the result, and then you respond based on that.
+
+Example - WRONG:
+\`\`\`
+<tool name="create_file">...</tool>
+✅ Created the script! It includes...
+\`\`\`
+
+Example - CORRECT:
+\`\`\`
+<tool name="create_file">...</tool>
+\`\`\`
+(Then wait for result, then respond)`
+}
+
 function generateToolDocs(userTier?: Tier): string {
-  const categories = ["filesystem", "tasks", "projects", "signals", "roblox_objects"] as const
+  const categories = ["filesystem", "tasks", "projects", "signals", "roblox_objects", "custom"] as const
   const lockedTools = userTier ? getLockedToolsForTier(userTier) : []
   
   let docs = "## AVAILABLE TOOLS\n\n"
@@ -162,6 +198,12 @@ export function buildSystemPrompt(
   }
   
   systemPrompt += "\n\n" + toolDocs
+
+  const customToolsContext = generateCustomToolsContext()
+  systemPrompt += "\n\n" + customToolsContext
+  
+  const toolExecutionContext = generateToolExecutionContext()
+  systemPrompt += "\n\n" + toolExecutionContext
   
   if (tierContext) {
     systemPrompt += "\n\n" + tierContext

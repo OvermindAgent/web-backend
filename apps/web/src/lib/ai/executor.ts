@@ -233,6 +233,40 @@ async function executeToolInternal(
         message: `Search queued for connected clients`
       }
     }
+
+    case "web_search": {
+      console.log(`[Tool] web_search:`, { query: args.query })
+
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+      const response = await fetch(`${baseUrl}/api/tools/search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: args.query }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Search failed: ${response.status}`)
+      }
+
+      return await response.json()
+    }
+
+    case "web_outline": {
+      console.log(`[Tool] web_outline:`, { url: args.url })
+
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+      const response = await fetch(`${baseUrl}/api/tools/outline`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: args.url }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Outline failed: ${response.status}`)
+      }
+
+      return await response.json()
+    }
       
     default:
       throw new Error(`Unimplemented tool: ${name}`)

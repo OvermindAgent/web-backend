@@ -2,7 +2,7 @@ export interface ToolDefinition {
   name: string
   description: string
   parameters: ToolParameter[]
-  category: "filesystem" | "tasks" | "projects" | "signals" | "roblox_objects"
+  category: "filesystem" | "tasks" | "projects" | "signals" | "roblox_objects" | "custom"
 }
 
 export interface ToolParameter {
@@ -226,10 +226,18 @@ export const TOOLS: ToolDefinition[] = [
   },
 ]
 
+import { CUSTOM_TOOLS } from "./custom-tools"
+
+const ALL_TOOLS: ToolDefinition[] = [...TOOLS, ...CUSTOM_TOOLS]
+
 export function getTool(name: string): ToolDefinition | undefined {
-  return TOOLS.find((t) => t.name === name)
+  return ALL_TOOLS.find((t) => t.name === name)
 }
 
 export function getToolsByCategory(category: ToolDefinition["category"]): ToolDefinition[] {
-  return TOOLS.filter((t) => t.category === category)
+  return ALL_TOOLS.filter((t) => t.category === category)
+}
+
+export function getAllTools(): ToolDefinition[] {
+  return ALL_TOOLS
 }

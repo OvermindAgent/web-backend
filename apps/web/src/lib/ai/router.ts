@@ -52,7 +52,6 @@ export async function chat(request: ChatRequest): Promise<ChatResponse> {
   ]
   
   console.log(`[Router] Using provider: ${provider}, model: ${model}, tier: ${request.userTier || "none"}`)
-  console.log(`[Router] System Prompt Length: ${systemPrompt.length} chars`)
   
   const response = await fetch(`${AI_CONFIG.baseUrl}/api/chat`, {
     method: "POST",
@@ -97,7 +96,6 @@ export async function* streamChat(request: ChatRequest): AsyncGenerator<StreamCh
   ]
   
   console.log(`[Router Stream] Using provider: ${provider}, model: ${model}, tier: ${request.userTier || "none"}`)
-  console.log(`[Router Stream] System Prompt Length: ${systemPrompt.length} chars`)
   
   const response = await fetch(`${AI_CONFIG.baseUrl}/api/chat`, {
     method: "POST",

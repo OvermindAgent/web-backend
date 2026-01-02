@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { authenticate, unauthorized, rateLimited, insufficientCredits, type AuthResult } from "@/lib/auth/middleware"
 import { chat, streamChat, type ChatMessage } from "@/lib/ai/router"
 import { parseToolCalls, executeTool, hasToolCall, extractTextContent } from "@/lib/ai/executor"
+import { runAgent, type AgentChunk } from "@/lib/ai/agent"
+import { isCustomTool } from "@/lib/ai/custom-tools"
 import type { Preset } from "@/lib/ai/presets"
 import { decryptchat, encryptchat } from "@/lib/crypto"
 import { calculateCreditCost, canUseCredits, checkRateLimit, isSameDay, getDailyCredits } from "@/lib/billing/credits"
@@ -131,36 +133,105 @@ export async function POST(request: NextRequest) {
       const readable = new ReadableStream({
         async start(controller) {
           try {
-            let fullContent = ""
-            let fullReasoning = ""
+            const MAX_ITERATIONS = 5
+            let currentMessages = [...messages]
+            let iteration = 0
             
-            for await (const chunk of streamChat({ messages, preset, projectContext, provider: effectiveProvider, model, userTier, userInfo })) {
-              if (chunk.done) {
-                if (hasToolCall(fullContent)) {
-                  const toolCalls = parseToolCalls(fullContent)
-                  for (const call of toolCalls) {
-                    const result = await executeTool(call, { projectId, userId: auth.userId })
-                    const encrypted = encryptchat(JSON.stringify({ type: "tool_result", call, result }))
-                    controller.enqueue(encoder.encode(`data: ${encrypted}\n\n`))
-                  }
+            while (iteration < MAX_ITERATIONS) {
+              iteration++
+              let fullContent = ""
+              let fullReasoning = ""
+              
+              console.log(`[Agent] Iteration ${iteration} starting with ${currentMessages.length} messages`)
+              
+              for await (const chunk of streamChat({ 
+                messages: currentMessages, 
+                preset, 
+                projectContext, 
+                provider: effectiveProvider, 
+                model, 
+                userTier, 
+                userInfo 
+              })) {
+                if (chunk.done) break
+                
+                if (chunk.content) {
+                  fullContent += chunk.content
+                  const encrypted = encryptchat(JSON.stringify({ type: "content", content: chunk.content }))
+                  controller.enqueue(encoder.encode(`data: ${encrypted}\n\n`))
                 }
-                const doneencrypted = encryptchat("[DONE]")
-                controller.enqueue(encoder.encode(`data: ${doneencrypted}\n\n`))
-                controller.close()
-                return
+                if (chunk.reasoning_content) {
+                  fullReasoning += chunk.reasoning_content
+                  const encrypted = encryptchat(JSON.stringify({ type: "reasoning", content: chunk.reasoning_content }))
+                  controller.enqueue(encoder.encode(`data: ${encrypted}\n\n`))
+                }
               }
               
-              if (chunk.content) {
-                fullContent += chunk.content
-                const encrypted = encryptchat(JSON.stringify({ type: "content", content: chunk.content }))
-                controller.enqueue(encoder.encode(`data: ${encrypted}\n\n`))
+              const hasIncompleteToolCall = fullContent.includes('<tool ') && !fullContent.includes('</tool>')
+              const hasIncompleteArg = fullContent.includes('<arg ') && (fullContent.match(/<arg /g) || []).length > (fullContent.match(/<\/arg>/g) || []).length
+              
+              if (hasIncompleteToolCall || hasIncompleteArg) {
+                console.log(`[Agent] Detected incomplete response, auto-continuing...`)
+                
+                const continueEncrypted = encryptchat(JSON.stringify({ type: "content", content: "\n[Continuing generation...]\n" }))
+                controller.enqueue(encoder.encode(`data: ${continueEncrypted}\n\n`))
+                
+                currentMessages = [
+                  ...currentMessages,
+                  { role: "assistant" as const, content: fullContent },
+                  { role: "user" as const, content: "Your response was truncated. Continue EXACTLY from where you left off. Do not restart or repeat - just continue the remaining content." }
+                ]
+                continue
               }
-              if (chunk.reasoning_content) {
-                fullReasoning += chunk.reasoning_content
-                const encrypted = encryptchat(JSON.stringify({ type: "reasoning", content: chunk.reasoning_content }))
-                controller.enqueue(encoder.encode(`data: ${encrypted}\n\n`))
+              
+              if (!hasToolCall(fullContent)) {
+                console.log(`[Agent] No tool calls found, ending loop`)
+                break
               }
+              
+              const toolCalls = parseToolCalls(fullContent)
+              console.log(`[Agent] Found ${toolCalls.length} tool calls`)
+              
+              let toolResultsText = ""
+              let hasToolResults = false
+              
+              for (const call of toolCalls) {
+                const result = await executeTool(call, { projectId, userId: auth.userId })
+                const encrypted = encryptchat(JSON.stringify({ type: "tool_result", call, result }))
+                controller.enqueue(encoder.encode(`data: ${encrypted}\n\n`))
+                
+                hasToolResults = true
+                if (result.success) {
+                  const resultData = typeof result.result === 'object' 
+                    ? JSON.stringify(result.result, null, 2)
+                    : String(result.result || "Success")
+                  toolResultsText += `\n[TOOL RESULT: ${call.name}]\n${resultData}\n[END RESULT]\n`
+                } else {
+                  toolResultsText += `\n[TOOL ERROR: ${call.name}]\n${result.error}\n[END ERROR]\n`
+                }
+              }
+              
+              if (!hasToolResults) {
+                console.log(`[Agent] No tool results, ending loop`)
+                break
+              }
+              
+              currentMessages = [
+                ...currentMessages,
+                { role: "assistant" as const, content: fullContent },
+                { role: "user" as const, content: `Here are the tool results:${toolResultsText}\n\nBased on these results, continue your response. If a tool failed, explain the error to the user. If you need more information, use another tool. Otherwise, provide your final answer to the user.` }
+              ]
+              
+              console.log(`[Agent] Continuing with tool results, iteration ${iteration + 1}`)
             }
+            
+            if (iteration >= MAX_ITERATIONS) {
+              console.log(`[Agent] Max iterations reached`)
+            }
+            
+            const doneencrypted = encryptchat("[DONE]")
+            controller.enqueue(encoder.encode(`data: ${doneencrypted}\n\n`))
+            controller.close()
           } catch (error) {
             const message = error instanceof Error ? error.message : "Stream error"
             const encrypted = encryptchat(JSON.stringify({ type: "error", error: message }))
