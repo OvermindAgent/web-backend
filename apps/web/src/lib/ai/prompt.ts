@@ -92,6 +92,77 @@ Example - CORRECT:
 (Then wait for result, then respond)`
 }
 
+export type FeatureFlags = {
+  webSearchEnabled?: boolean
+  canvasEnabled?: boolean
+  mentorEnabled?: boolean
+}
+
+function generateFeatureFlagsContext(flags?: FeatureFlags): string {
+  if (!flags) return ""
+  
+  let context = ""
+  
+  if (flags.webSearchEnabled) {
+    context += `## WEB SEARCH MODE (FORCED)
+
+Web search is ENABLED and REQUIRED. You MUST use the web_search tool for:
+- Any factual questions you're not 100% certain about
+- Current events, news, real-time information
+- Complex scripting that needs documentation or code examples
+- Any topic that might have changed since your training data
+- Technical questions about APIs, libraries, or frameworks
+
+DO NOT answer from memory alone when this mode is active - search first, then respond with accurate, up-to-date information.
+
+`
+  }
+  
+  if (flags.mentorEnabled) {
+    context += `## ACADEMY MODE (LEARNING COMPANION)
+
+You are now a study buddy helping the user LEARN, not just get answers.
+
+**Your teaching approach:**
+- Explain concepts step-by-step, like a patient friend would
+- Ask guiding questions to help them think through problems
+- Don't just give answers - help them understand WHY things work
+- Break complex topics into bite-sized, digestible pieces
+- Use analogies and real-world examples they can relate to
+- Check understanding: "Does that make sense?" "What do you think would happen if...?"
+- Celebrate their progress and encourage curiosity
+- If they're stuck, give hints before full answers
+
+**Tone:** Friendly, casual, supportive - like a classmate who's really good at this subject and genuinely wants to help you understand.
+
+`
+  }
+  
+  if (flags.canvasEnabled) {
+    context += `## CANVAS MODE
+
+Canvas is enabled. You can use canvas tools to create visual content that appears in a side panel.
+
+**Canvas tools:**
+- canvas_write: Write/replace all content in the canvas
+- canvas_append: Add content to the end of canvas
+- canvas_clear: Clear the canvas
+
+**Supported content types:**
+- Markdown with full formatting
+- Mermaid diagrams (flowchart, sequence, class, state, ER, pie, mindmap, timeline, gitGraph)
+- Math equations using LaTeX syntax (wrapped in $$ for block or $ for inline)
+- Code blocks with syntax highlighting
+- Tables, lists, and all standard markdown
+
+Use the canvas when you need to show diagrams, structured content, or anything visual that benefits from a dedicated space.
+
+`
+  }
+  
+  return context
+}
+
 function generateToolDocs(userTier?: Tier): string {
   const categories = ["filesystem", "tasks", "projects", "signals", "roblox_objects", "custom"] as const
   const lockedTools = userTier ? getLockedToolsForTier(userTier) : []
@@ -177,12 +248,14 @@ export function buildSystemPrompt(
   preset: Preset, 
   projectContext?: string, 
   userTier?: Tier,
-  userInfo?: { displayName?: string; creditsUsed?: number; creditsTotal?: number }
+  userInfo?: { displayName?: string; creditsUsed?: number; creditsTotal?: number },
+  featureFlags?: FeatureFlags
 ): string {
   const basePrompt = loadInternalPrompt()
   const presetConfig = getPreset(preset)
   const toolDocs = generateToolDocs(userTier)
   const tierContext = userTier ? generateTierContext(userTier, userInfo) : ""
+  const featureFlagsContext = generateFeatureFlagsContext(featureFlags)
   
   let systemPrompt = ""
   
@@ -205,6 +278,10 @@ export function buildSystemPrompt(
   const toolExecutionContext = generateToolExecutionContext()
   systemPrompt += "\n\n" + toolExecutionContext
   
+  if (featureFlagsContext) {
+    systemPrompt += "\n\n" + featureFlagsContext
+  }
+  
   if (tierContext) {
     systemPrompt += "\n\n" + tierContext
   }
@@ -213,7 +290,12 @@ export function buildSystemPrompt(
     systemPrompt += `\n\n## PROJECT CONTEXT\n\n${projectContext}`
   }
   
-  console.log(`[Prompt] Building for preset: ${preset}, tier: ${userTier || "none"}`)
+  const activeFlags = []
+  if (featureFlags?.webSearchEnabled) activeFlags.push("webSearch")
+  if (featureFlags?.mentorEnabled) activeFlags.push("mentor")
+  if (featureFlags?.canvasEnabled) activeFlags.push("canvas")
+  
+  console.log(`[Prompt] Building for preset: ${preset}, tier: ${userTier || "none"}, flags: [${activeFlags.join(", ")}]`)
   
   return systemPrompt
 }

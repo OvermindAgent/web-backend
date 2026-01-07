@@ -26,6 +26,38 @@ export const CUSTOM_TOOLS: ToolDefinition[] = [
         description: "The full URL of the webpage to extract content from"
       }
     ]
+  },
+  {
+    name: "canvas_write",
+    description: "Write content to the canvas side panel. This replaces all existing content. Use for creating diagrams, markdown, code, or any visual content. Supports mermaid diagrams, LaTeX math, and full markdown.",
+    category: "custom",
+    parameters: [
+      {
+        name: "content",
+        type: "string",
+        required: true,
+        description: "The content to write to canvas (markdown, mermaid, math, code)"
+      }
+    ]
+  },
+  {
+    name: "canvas_append",
+    description: "Append content to the canvas side panel. Adds to existing content without replacing it.",
+    category: "custom",
+    parameters: [
+      {
+        name: "content",
+        type: "string",
+        required: true,
+        description: "The content to append to canvas"
+      }
+    ]
+  },
+  {
+    name: "canvas_clear",
+    description: "Clear all content from the canvas side panel.",
+    category: "custom",
+    parameters: []
   }
 ]
 

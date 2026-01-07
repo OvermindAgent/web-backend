@@ -18,6 +18,7 @@ export interface ChatRequest {
   model?: string
   userTier?: Tier
   userInfo?: { displayName?: string; creditsUsed?: number; creditsTotal?: number }
+  featureFlags?: { webSearchEnabled?: boolean; canvasEnabled?: boolean; mentorEnabled?: boolean }
 }
 
 export interface ChatResponse {
@@ -84,7 +85,7 @@ export async function chat(request: ChatRequest): Promise<ChatResponse> {
 
 export async function* streamChat(request: ChatRequest): AsyncGenerator<StreamChunk> {
   const preset = request.preset || "fast"
-  const systemPrompt = buildSystemPrompt(preset, request.projectContext, request.userTier, request.userInfo)
+  const systemPrompt = buildSystemPrompt(preset, request.projectContext, request.userTier, request.userInfo, request.featureFlags)
   const presetConfig = getPreset(preset)
   
   const provider = request.provider || presetConfig.provider || AI_CONFIG.defaultProvider

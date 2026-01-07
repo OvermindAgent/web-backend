@@ -26,6 +26,9 @@ export async function POST(request: NextRequest) {
     let model: string | undefined
     let projectId: string | undefined
     let skipCredits: boolean | undefined
+    let webSearchEnabled: boolean | undefined
+    let canvasEnabled: boolean | undefined
+    let mentorEnabled: boolean | undefined
     
     if (body.encrypted) {
       try {
@@ -39,6 +42,9 @@ export async function POST(request: NextRequest) {
         model = parsed.model
         projectId = parsed.projectId
         skipCredits = parsed.skipCredits
+        webSearchEnabled = parsed.webSearchEnabled
+        canvasEnabled = parsed.canvasEnabled
+        mentorEnabled = parsed.mentorEnabled
       } catch (error) {
         console.error("decryption error:", error)
         return NextResponse.json({ error: "Invalid encrypted payload" }, { status: 400 })
@@ -53,6 +59,9 @@ export async function POST(request: NextRequest) {
         model?: string
         projectId?: string
         skipCredits?: boolean
+        webSearchEnabled?: boolean
+        canvasEnabled?: boolean
+        mentorEnabled?: boolean
       }
       messages = data.messages
       preset = data.preset
@@ -62,6 +71,9 @@ export async function POST(request: NextRequest) {
       model = data.model
       projectId = data.projectId
       skipCredits = data.skipCredits
+      webSearchEnabled = data.webSearchEnabled
+      canvasEnabled = data.canvasEnabled
+      mentorEnabled = data.mentorEnabled
     }
     
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -151,7 +163,8 @@ export async function POST(request: NextRequest) {
                 provider: effectiveProvider, 
                 model, 
                 userTier, 
-                userInfo 
+                userInfo,
+                featureFlags: { webSearchEnabled, canvasEnabled, mentorEnabled }
               })) {
                 if (chunk.done) break
                 

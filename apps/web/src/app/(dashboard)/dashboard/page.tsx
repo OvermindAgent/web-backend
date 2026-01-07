@@ -60,13 +60,14 @@ import { encryptdata, decryptdata } from "@/lib/crypto.browser"
 import { getAllModels } from "@/lib/billing/models"
 import { WebSearchCard } from "@/components/ui/web-search-card"
 import { WebOutlineCard } from "@/components/ui/web-outline-card"
+import { CanvasPanel, type CanvasHistory } from "@/components/ui/canvas-panel"
 
 type Preset = "fast" | "edit" | "planning" | "unrestricted"
 type ConnectionState = "disconnected" | "connecting" | "connected"
 
 type ToolStatus = "pending" | "executing" | "success" | "error"
 
-const CUSTOM_TOOLS = ["web_search", "web_outline"]
+const CUSTOM_TOOLS = ["web_search", "web_outline", "canvas_write", "canvas_append", "canvas_clear"]
 
 interface SearchResult {
   title: string
@@ -705,6 +706,11 @@ export default function DashboardPage() {
   const [mentorEnabled, setMentorEnabled] = useState(false)
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   
+  const [canvasContent, setCanvasContent] = useState("")
+  const [canvasHistory, setCanvasHistory] = useState<CanvasHistory[]>([])
+  const [canvasHistoryIndex, setCanvasHistoryIndex] = useState(-1)
+  const [canvasStatus, setCanvasStatus] = useState<"idle" | "drawing" | "processing">("idle")
+  
   const [tierWarning, setTierWarning] = useState<{ show: boolean; message: string; gracePeriodEnds?: number } | null>(null)
   const [credits, setCredits] = useState<{ used: number; total: number; available: number } | null>(null)
   const [currentTier, setCurrentTier] = useState<"free" | "pro" | "studio">("free")
@@ -717,6 +723,38 @@ export default function DashboardPage() {
     if (!a.pinned && b.pinned) return 1
     return b.updatedAt - a.updatedAt
   })
+  
+  const updateCanvasContent = (newContent: string) => {
+    setCanvasContent(newContent)
+    const newHistory: CanvasHistory = { content: newContent, timestamp: Date.now() }
+    setCanvasHistory(prev => [...prev.slice(0, canvasHistoryIndex + 1), newHistory])
+    setCanvasHistoryIndex(prev => prev + 1)
+  }
+  
+  const canvasUndo = () => {
+    if (canvasHistoryIndex > 0) {
+      setCanvasHistoryIndex(prev => prev - 1)
+      setCanvasContent(canvasHistory[canvasHistoryIndex - 1].content)
+    }
+  }
+  
+  const canvasRedo = () => {
+    if (canvasHistoryIndex < canvasHistory.length - 1) {
+      setCanvasHistoryIndex(prev => prev + 1)
+      setCanvasContent(canvasHistory[canvasHistoryIndex + 1].content)
+    }
+  }
+  
+  const canvasClear = () => {
+    updateCanvasContent("")
+  }
+  
+  const handleCanvasClose = () => {
+    setCanvasContent("")
+    setCanvasHistory([])
+    setCanvasHistoryIndex(-1)
+    setCanvasStatus("idle")
+  }
   
   async function fetchBillingInfo() {
     try {
@@ -1228,6 +1266,9 @@ export default function DashboardPage() {
         projectContext: connectionContext + projectContext,
         projectId: selectedProject?.id,
         stream: true,
+        webSearchEnabled,
+        canvasEnabled,
+        mentorEnabled,
       }
       
       const encryptedpayload = encryptdata(JSON.stringify(payload))
@@ -1314,6 +1355,29 @@ export default function DashboardPage() {
                           content: result.content as string,
                           wordCount: result.wordCount as number
                         }
+                      }
+                    } else if (toolCall.name === "canvas_write") {
+                      const content = toolCall.args.content as string
+                      updateCanvasContent(content)
+                      setCanvasStatus("idle")
+                      toolStatuses[toolCall.name] = {
+                        status: "success",
+                        result: "Canvas updated"
+                      }
+                    } else if (toolCall.name === "canvas_append") {
+                      const content = toolCall.args.content as string
+                      updateCanvasContent(canvasContent + "\n\n" + content)
+                      setCanvasStatus("idle")
+                      toolStatuses[toolCall.name] = {
+                        status: "success",
+                        result: "Content appended to canvas"
+                      }
+                    } else if (toolCall.name === "canvas_clear") {
+                      canvasClear()
+                      setCanvasStatus("idle")
+                      toolStatuses[toolCall.name] = {
+                        status: "success",
+                        result: "Canvas cleared"
                       }
                     }
                   } else {
@@ -2266,6 +2330,19 @@ export default function DashboardPage() {
           </form>
         </div>
       </main>
+
+      {(canvasContent || (canvasEnabled && canvasStatus !== "idle")) && (
+        <CanvasPanel
+          content={canvasContent}
+          onClose={handleCanvasClose}
+          onClear={canvasClear}
+          history={canvasHistory}
+          historyIndex={canvasHistoryIndex}
+          onUndo={canvasUndo}
+          onRedo={canvasRedo}
+          status={canvasStatus}
+        />
+      )}
 
       <ContextMenu
         open={chatContextMenu.open}
