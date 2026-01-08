@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import { RichMarkdown } from "./rich-markdown"
+import { CodeBlock } from "./code-block"
 import { cn } from "@/lib/utils"
 import { 
   X, 
@@ -13,7 +14,9 @@ import {
   Maximize2,
   Minimize2,
   GripVertical,
-  Sparkles
+  Sparkles,
+  Eye,
+  Code2
 } from "lucide-react"
 
 export interface CanvasHistory {
@@ -37,6 +40,43 @@ const MIN_WIDTH = 320
 const MAX_WIDTH = 800
 const DEFAULT_WIDTH = 450
 
+function isHtmlContent(content: string): boolean {
+  if (!content) return false
+  const trimmed = content.trim()
+  const hasDoctype = /<!doctype\s+html/i.test(trimmed)
+  const hasHtmlTag = /<html[\s>]/i.test(trimmed)
+  const hasFullHtmlStructure = /<html[\s\S]*>[\s\S]*<head[\s\S]*>[\s\S]*<body[\s\S]*>/i.test(trimmed)
+  const hasMultipleHtmlTags = (trimmed.match(/<(div|span|p|h[1-6]|section|article|nav|header|footer|main|form|input|button|a|img|table|ul|ol|li)\b/gi) || []).length >= 3
+  
+  return hasDoctype || hasHtmlTag || hasFullHtmlStructure || hasMultipleHtmlTags
+}
+
+function HtmlPreview({ html, className }: { html: string; className?: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+
+  useEffect(() => {
+    if (!iframeRef.current) return
+    
+    const doc = iframeRef.current.contentDocument
+    if (!doc) return
+
+    doc.open()
+    doc.write(html)
+    doc.close()
+  }, [html])
+
+  return (
+    <iframe
+      ref={iframeRef}
+      className={cn("w-full h-full border-0 bg-white rounded-lg", className)}
+      sandbox="allow-scripts allow-same-origin"
+      title="HTML Preview"
+    />
+  )
+}
+
+type ViewMode = "preview" | "code"
+
 export function CanvasPanel({
   content,
   onClose,
@@ -51,8 +91,11 @@ export function CanvasPanel({
   const [width, setWidth] = useState(DEFAULT_WIDTH)
   const [isResizing, setIsResizing] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [viewMode, setViewMode] = useState<ViewMode>("preview")
   const panelRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+
+  const isHtml = useMemo(() => isHtmlContent(content), [content])
 
   useEffect(() => {
     if (contentRef.current && status === "drawing") {
@@ -99,13 +142,68 @@ export function CanvasPanel({
   const currentStatus = statusConfig[status]
   const StatusIcon = currentStatus.icon
 
+  const TabSwitcher = () => (
+    <div className="flex items-center p-1 bg-zinc-900/80 rounded-lg border border-zinc-800/60">
+      <button
+        onClick={() => setViewMode("preview")}
+        className={cn(
+          "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200",
+          viewMode === "preview"
+            ? "bg-violet-500/20 text-violet-300 shadow-sm"
+            : "text-zinc-500 hover:text-zinc-300"
+        )}
+      >
+        <Eye className="w-3.5 h-3.5" />
+        <span>Preview</span>
+      </button>
+      <button
+        onClick={() => setViewMode("code")}
+        className={cn(
+          "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200",
+          viewMode === "code"
+            ? "bg-violet-500/20 text-violet-300 shadow-sm"
+            : "text-zinc-500 hover:text-zinc-300"
+        )}
+      >
+        <Code2 className="w-3.5 h-3.5" />
+        <span>Code</span>
+      </button>
+    </div>
+  )
+
+  const renderContent = () => {
+    if (!content) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
+          <FileCode className="w-12 h-12 mb-4 opacity-30" />
+          <p className="text-sm">Canvas is empty</p>
+          <p className="text-xs mt-1 opacity-70">AI will draw here when canvas mode is active</p>
+        </div>
+      )
+    }
+
+    if (isHtml) {
+      if (viewMode === "preview") {
+        return <HtmlPreview html={content} className="flex-1" />
+      } else {
+        return <CodeBlock language="html">{content}</CodeBlock>
+      }
+    }
+
+    return <RichMarkdown content={content} className="text-sm" />
+  }
+
   if (isFullscreen) {
     return (
       <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-lg flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-border/50">
-          <div className="flex items-center gap-2">
-            <StatusIcon className={cn("w-5 h-5", currentStatus.color, currentStatus.spin && "animate-spin")} />
-            <span className={cn("font-medium", currentStatus.color)}>{currentStatus.text}</span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <StatusIcon className={cn("w-5 h-5", currentStatus.color, currentStatus.spin && "animate-spin")} />
+              <span className={cn("font-medium", currentStatus.color)}>{currentStatus.text}</span>
+            </div>
+            
+            {isHtml && <TabSwitcher />}
           </div>
           
           <div className="flex items-center gap-2">
@@ -125,7 +223,7 @@ export function CanvasPanel({
         </div>
         
         <div className="flex-1 overflow-auto p-6">
-          <RichMarkdown content={content} className="prose prose-invert max-w-none" />
+          {renderContent()}
         </div>
       </div>
     )
@@ -152,7 +250,7 @@ export function CanvasPanel({
         </div>
       </div>
 
-      <div className="flex items-center justify-between p-3 border-b border-border/50 bg-background/50">
+      <div className="relative flex items-center justify-between p-3 border-b border-border/50 bg-background/50">
         <div className="flex items-center gap-2">
           <StatusIcon className={cn("w-4 h-4", currentStatus.color, currentStatus.spin && "animate-spin")} />
           <span className={cn("text-sm font-medium", currentStatus.color)}>{currentStatus.text}</span>
@@ -163,6 +261,12 @@ export function CanvasPanel({
             </span>
           )}
         </div>
+
+        {isHtml && content && (
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+            <TabSwitcher />
+          </div>
+        )}
 
         <div className="flex items-center gap-1">
           <button
@@ -225,15 +329,7 @@ export function CanvasPanel({
         ref={contentRef}
         className="flex-1 overflow-auto p-4 scrollbar-thin"
       >
-        {content ? (
-          <RichMarkdown content={content} className="text-sm" />
-        ) : (
-          <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
-            <FileCode className="w-12 h-12 mb-4 opacity-30" />
-            <p className="text-sm">Canvas is empty</p>
-            <p className="text-xs mt-1 opacity-70">AI will draw here when canvas mode is active</p>
-          </div>
-        )}
+        {renderContent()}
       </div>
 
       {status !== "idle" && (

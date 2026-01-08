@@ -147,7 +147,7 @@ function parseToolCalls(content: string): { text: string; tools: ToolCall[]; thi
   }
   
   const incompleteToolMatch = content.match(/<tool\s+name="([^"]+)">([\s\S]*)$/)
-  if (incompleteToolMatch && !content.includes("</tool>")) {
+  if (incompleteToolMatch && !incompleteToolMatch[2].includes("</tool>")) {
     const [, toolName, partialContent] = incompleteToolMatch
     const args: Record<string, string> = {}
     
@@ -158,7 +158,7 @@ function parseToolCalls(content: string): { text: string; tools: ToolCall[]; thi
     }
     
     const incompleteArgMatch = partialContent.match(/<arg\s+name="([^"]+)">([\s\S]*)$/)
-    if (incompleteArgMatch) {
+    if (incompleteArgMatch && !incompleteArgMatch[2].includes("</arg>")) {
       args[incompleteArgMatch[1]] = incompleteArgMatch[2]
     }
     
@@ -220,30 +220,46 @@ function parseContentSegments(content: string, toolStatuses?: Record<string, Too
     lastIndex = match.index + match[0].length
   }
   
-  const incompleteMatch = cleanContent.match(/<tool\s+name="([^"]+)">([\s\S]*)$/)
-  if (incompleteMatch) {
-    const textBefore = cleanContent.slice(lastIndex, cleanContent.indexOf(incompleteMatch[0])).trim()
-    if (textBefore) {
-      segments.push({ type: "text", content: textBefore })
+  const remainingContent = cleanContent.slice(lastIndex)
+  const incompleteToolIdx = remainingContent.lastIndexOf('<tool ')
+  
+  if (incompleteToolIdx !== -1) {
+    const afterToolTag = remainingContent.slice(incompleteToolIdx)
+    const hasClosingTag = afterToolTag.includes('</tool>')
+    
+    if (!hasClosingTag) {
+      const textBefore = remainingContent.slice(0, incompleteToolIdx).trim()
+      if (textBefore) {
+        segments.push({ type: "text", content: textBefore })
+      }
+      
+      const toolNameMatch = afterToolTag.match(/<tool\s+name="([^"]+)">/)
+      if (toolNameMatch) {
+        const toolName = toolNameMatch[1]
+        const partialContent = afterToolTag.slice(toolNameMatch[0].length)
+        const args: Record<string, string> = {}
+        
+        const completeArgRegex = /<arg\s+name="([^"]+)">([\s\S]*?)<\/arg>/g
+        let argMatch: RegExpExecArray | null
+        while ((argMatch = completeArgRegex.exec(partialContent)) !== null) {
+          args[argMatch[1]] = argMatch[2].trim()
+        }
+        
+        const incompleteArgMatch = partialContent.match(/<arg\s+name="([^"]+)">([\s\S]*)$/)
+        if (incompleteArgMatch && !incompleteArgMatch[2].includes("</arg>")) {
+          args[incompleteArgMatch[1]] = incompleteArgMatch[2]
+        }
+        
+        segments.push({ type: "tool", tool: { name: toolName, args, status: "executing" } })
+      }
+    } else {
+      const remainingText = remainingContent.trim()
+      if (remainingText) {
+        segments.push({ type: "text", content: remainingText })
+      }
     }
-    
-    const [, toolName, partialContent] = incompleteMatch
-    const args: Record<string, string> = {}
-    
-    const completeArgRegex = /<arg\s+name="([^"]+)">([\s\S]*?)<\/arg>/g
-    let argMatch: RegExpExecArray | null
-    while ((argMatch = completeArgRegex.exec(partialContent)) !== null) {
-      args[argMatch[1]] = argMatch[2].trim()
-    }
-    
-    const incompleteArgMatch = partialContent.match(/<arg\s+name="([^"]+)">([\s\S]*)$/)
-    if (incompleteArgMatch) {
-      args[incompleteArgMatch[1]] = incompleteArgMatch[2]
-    }
-    
-    segments.push({ type: "tool", tool: { name: toolName, args, status: "executing" } })
   } else {
-    const remainingText = cleanContent.slice(lastIndex).trim()
+    const remainingText = remainingContent.trim()
     if (remainingText) {
       segments.push({ type: "text", content: remainingText })
     }
@@ -1433,6 +1449,25 @@ export default function DashboardPage() {
 
               const { tools: parsedTools, thinking } = parseToolCalls(assistantContent)
               
+              parsedTools.forEach(pt => {
+                const isCanvasTool = ["canvas_write", "canvas_append", "canvas_clear"].includes(pt.name)
+                if (isCanvasTool && pt.status === "pending" && !toolStatuses[pt.name]) {
+                  if (pt.name === "canvas_write") {
+                    updateCanvasContent(pt.args.content || "")
+                    setCanvasStatus("idle")
+                    toolStatuses[pt.name] = { status: "success", result: "Canvas updated" }
+                  } else if (pt.name === "canvas_append") {
+                    updateCanvasContent(canvasContent + "\n\n" + (pt.args.content || ""))
+                    setCanvasStatus("idle")
+                    toolStatuses[pt.name] = { status: "success", result: "Content appended" }
+                  } else if (pt.name === "canvas_clear") {
+                    canvasClear()
+                    setCanvasStatus("idle")
+                    toolStatuses[pt.name] = { status: "success", result: "Canvas cleared" }
+                  }
+                }
+              })
+              
               if (parsedTools.length > 0) {
                 console.log("[Chat] Parsed tools:", parsedTools.map(t => t.name), "Statuses:", toolStatuses)
               }
@@ -1472,7 +1507,7 @@ export default function DashboardPage() {
                     ? { 
                         ...m, 
                         content: assistantContent, 
-                        reasoning: thinking || assistantReasoning, 
+                        reasoning: assistantReasoning || thinking, 
                         toolCalls: mergedTools,
                         isThinking: !assistantContent && (!!assistantReasoning || mergedTools.length > 0)
                       }

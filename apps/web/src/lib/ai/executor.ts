@@ -267,6 +267,13 @@ async function executeToolInternal(
 
       return await response.json()
     }
+
+    case "canvas_write":
+    case "canvas_append":
+    case "canvas_clear": {
+      console.log(`[Tool] ${name}: client-side tool, returning success`)
+      return { success: true, message: "Canvas tool executed on client" }
+    }
       
     default:
       throw new Error(`Unimplemented tool: ${name}`)
